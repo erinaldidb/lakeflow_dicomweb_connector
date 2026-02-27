@@ -95,7 +95,41 @@ OPTIONS (
 );
 ```
 
-Or follow the Lakeflow Community Connector UI flow from the Databricks **Add Data** page and select **DICOMweb VNA/PACS** from the connector list.
+Or follow the Lakeflow Community Connector UI flow from the Databricks **Add Data** page — see the note below about UI field rendering for standalone connectors.
+
+### Note: Connection UI Field Rendering
+
+The Databricks "Create Connection" UI renders connector-specific fields (e.g., labelled inputs for `base_url`, `auth_type`) by fetching `connector_spec.yaml` **directly from the official `databrickslabs/lakeflow-community-connectors` GitHub repository**. Because this connector lives in a separate repository, the UI falls back to a generic **Additional Options** key/value form instead of showing named fields.
+
+This is a cosmetic limitation only — the connection works identically regardless of which form is used.
+
+**Option 1 — Fill the generic UI form manually (works today)**
+
+In the Additional Options table, add the following rows:
+
+| Key | Value |
+|-----|-------|
+| `base_url` | `https://your-pacs.example.com/dicom-web` |
+| `auth_type` | `none` (or `basic` / `bearer`) |
+| `sourceName` | `dicomweb` |
+| `externalOptionsAllowList` | `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date` |
+
+Add `username` + `password` or `token` rows as needed for authenticated endpoints.
+
+**Option 2 — Use the community connector CLI with `--spec-path`**
+
+The CLI supports a custom repository URL so it reads the spec from this repo instead of the official one:
+
+```bash
+databricks labs lakeflow-community-connectors setup \
+  --source dicomweb \
+  --spec-path https://github.com/erinaldidb/lakeflow_dicomweb_connector \
+  --connection-name dicomweb-fevm
+```
+
+**Option 3 — Contribute to the official repo (long term)**
+
+Submit a PR to `databrickslabs/lakeflow-community-connectors` adding the `dicomweb` source directory. Once merged, the Databricks UI will automatically render the named fields for all users.
 
 ## Supported Objects
 
