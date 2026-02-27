@@ -1,0 +1,67 @@
+display_name: DICOMweb VNA/PACS
+description: >
+  Incrementally ingests DICOM study, series, and instance metadata from any
+  DICOMweb-compliant VNA or PACS system using QIDO-RS queries. Optionally
+  retrieves full DICOM files via WADO-RS and writes them to a Unity Catalog Volume.
+
+connector_type: source
+ingestion_type: cdc
+
+connection:
+  parameters:
+    - name: base_url
+      display_name: DICOMweb Base URL
+      description: >
+        Base URL of the DICOMweb endpoint, e.g.
+        https://orthanc.example.com/dicom-web
+      type: string
+      required: true
+
+    - name: auth_type
+      display_name: Authentication Type
+      description: "Authentication method: none, basic, or bearer"
+      type: string
+      required: false
+      default: none
+      enum: [none, basic, bearer]
+
+    - name: username
+      display_name: Username
+      description: Username for HTTP Basic authentication
+      type: string
+      required: false
+
+    - name: password
+      display_name: Password
+      description: Password for HTTP Basic authentication
+      type: string
+      required: false
+      secret: true
+
+    - name: token
+      display_name: Bearer Token
+      description: Bearer token for token-based authentication
+      type: string
+      required: false
+      secret: true
+
+# These options can be set per-table in the pipeline spec
+external_options_allowlist: "fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date"
+
+tables:
+  - name: studies
+    description: DICOM study-level metadata from QIDO-RS /studies
+    cursor_field: StudyDate
+    ingestion_type: cdc
+
+  - name: series
+    description: DICOM series-level metadata from QIDO-RS /series
+    cursor_field: StudyDate
+    ingestion_type: cdc
+
+  - name: instances
+    description: >
+      DICOM instance-level metadata from QIDO-RS /instances.
+      Set fetch_dicom_files=true to also retrieve .dcm files via WADO-RS.
+    cursor_field: StudyDate
+    ingestion_type: cdc
