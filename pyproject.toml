@@ -1,49 +1,35 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "lakeflow-dicomweb-connector"
+name = "lakeflow-community-connectors-dicomweb"
 version = "0.1.0"
-description = "Lakeflow Community Connector for DICOMweb VNA/PACS systems"
+description = "DICOMweb VNA/PACS connector for Lakeflow Community Connectors"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-authors = [{ name = "Databricks Labs" }]
-keywords = ["databricks", "lakeflow", "dicom", "dicomweb", "pacs", "vna", "medical imaging"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Healthcare Industry",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
 dependencies = [
+    "pyspark>=3.5.0",
     "requests>=2.28.0",
-    "pyspark>=3.4.0",
+    "lakeflow-community-connectors>=0.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
+    "pytest>=7.0.0",
     "pytest-mock>=3.11.0",
     "responses>=0.23.0",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/databricks"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["databricks*"]
 
-[tool.hatch.metadata]
-allow-direct-references = true
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.md", "*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-
-[tool.ruff]
-line-length = 120
-target-version = "py310"
