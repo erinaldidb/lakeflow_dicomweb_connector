@@ -277,14 +277,21 @@ from databricks.labs.community_connector import register
 
 spark.conf.set("spark.databricks.unityCatalog.connectionDfOptionInjection.enabled", "true")
 
+# ── Configure these for your environment ─────────────────────────────────────
+CATALOG        = "main"
+SCHEMA         = "dicom_bronze"
+VOLUME         = f"/Volumes/{CATALOG}/{SCHEMA}/dicom_files"
+CONNECTION     = "dicomweb-fevm"
+# ─────────────────────────────────────────────────────────────────────────────
+
 pipeline_spec = {
-    "connection_name": "dicomweb-fevm",
+    "connection_name": CONNECTION,
     "objects": [
         {
             "table": {
                 "source_table": "studies",
-                "destination_catalog": "main",
-                "destination_schema":  "dicom_bronze",
+                "destination_catalog": CATALOG,
+                "destination_schema":  SCHEMA,
                 "table_configuration": {
                     "scd_type":      "SCD_TYPE_1",
                     "primary_keys":  ["StudyInstanceUID"],
@@ -296,8 +303,8 @@ pipeline_spec = {
         {
             "table": {
                 "source_table": "series",
-                "destination_catalog": "main",
-                "destination_schema":  "dicom_bronze",
+                "destination_catalog": CATALOG,
+                "destination_schema":  SCHEMA,
                 "table_configuration": {
                     "scd_type":      "SCD_TYPE_1",
                     "primary_keys":  ["SeriesInstanceUID"],
@@ -309,8 +316,8 @@ pipeline_spec = {
         {
             "table": {
                 "source_table": "instances",
-                "destination_catalog": "main",
-                "destination_schema":  "dicom_bronze",
+                "destination_catalog": CATALOG,
+                "destination_schema":  SCHEMA,
                 "table_configuration": {
                     "scd_type":      "SCD_TYPE_1",
                     "primary_keys":  ["SOPInstanceUID"],
@@ -318,8 +325,8 @@ pipeline_spec = {
                     "page_size":     "200",
                     # Optional: retrieve raw .dcm files via WADO-RS
                     # "fetch_dicom_files": "true",
-                    # "dicom_volume_path": "/Volumes/main/dicom_bronze/dicom_files",
-                    # "wado_mode":          "auto",   # or "full" / "frames"
+                    # "dicom_volume_path": VOLUME,
+                    # "wado_mode":         "auto",   # or "full" / "frames"
                     # Optional: store full DICOM JSON in the metadata column
                     # "fetch_metadata": "true",
                 },
@@ -328,8 +335,8 @@ pipeline_spec = {
         {
             "table": {
                 "source_table": "diagnostics",
-                "destination_catalog": "main",
-                "destination_schema":  "dicom_bronze",
+                "destination_catalog": CATALOG,
+                "destination_schema":  SCHEMA,
                 "table_configuration": {
                     "scd_type":     "SCD_TYPE_1",
                     "primary_keys": ["endpoint"],
