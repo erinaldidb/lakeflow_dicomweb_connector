@@ -195,10 +195,14 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
             return record
 
         dest_path = pathlib.Path(volume_path) / study_uid / series_uid / f"{sop_uid}.dcm"
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-
         try:
             dicom_bytes = self._client.retrieve_instance(study_uid, series_uid, sop_uid)
+            try:
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                # UC Volume FUSE mounts do not support mkdir via POSIX syscalls;
+                # the write_bytes() call below works regardless.
+                pass
             dest_path.write_bytes(dicom_bytes)
             record["dicom_file_path"] = str(dest_path)
             logger.debug("Wrote %d bytes → %s", len(dicom_bytes), dest_path)
