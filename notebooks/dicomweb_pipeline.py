@@ -45,8 +45,8 @@
 
 # COMMAND ----------
 
-from databricks.labs.community_connector.pipeline import ingest
 from databricks.labs.community_connector import register
+from databricks.labs.community_connector.pipeline import ingest
 
 # Required: allows the connector to pick up credentials from the UC connection
 spark.conf.set("spark.databricks.unityCatalog.connectionDfOptionInjection.enabled", "true")

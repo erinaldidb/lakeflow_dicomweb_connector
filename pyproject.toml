@@ -52,3 +52,4 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]
 "*/_generated_*" = ["E501", "F811"]  # generated file has intentional re-definitions
+"notebooks/*" = ["F821"]             # Databricks notebooks inject spark/dbutils as builtins
