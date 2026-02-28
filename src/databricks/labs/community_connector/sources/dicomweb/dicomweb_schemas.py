@@ -13,24 +13,14 @@ from pyspark.sql.types import (
     StructType,
 )
 
-# VariantType was introduced in Spark 4.0 / Databricks Runtime 15.x.
-# Fall back to StringType on older runtimes so the package remains compatible
-# with pyspark>=3.5.0.  On DBR 15.x+ the metadata column stores a true VARIANT;
-# on older runtimes it stores a JSON string that can be CAST to VARIANT in SQL.
-try:
-    from pyspark.sql.types import VariantType as _VariantType  # type: ignore[attr-defined]
-    from pyspark.sql.types import VariantVal as _VariantVal  # type: ignore[attr-defined]
-
-    _METADATA_TYPE = _VariantType()
-    # On DBR 15.x+ (VariantType available) Spark's convert_variant ONLY accepts None
-    # or a VariantVal object — plain dicts and JSON strings both raise MALFORMED_VARIANT.
-    # Use VariantVal.parseJson(json_string) to construct the correct value.
-    METADATA_IS_VARIANT = True
-except ImportError:
-    _VariantVal = None  # type: ignore[assignment,misc]
-    _METADATA_TYPE = StringType()
-    # On older runtimes metadata is stored as a JSON string in a StringType column.
-    METADATA_IS_VARIANT = False
+# The metadata column always uses StringType and stores a JSON string.
+# Spark's Python DataSource convert_variant() has strict VariantVal requirements
+# that interact poorly with executor serialisation on some DBR serverless versions.
+# Storing JSON in StringType avoids this entirely.
+# On DBR 15.x+ callers can CAST the column: CAST(metadata AS VARIANT).
+_METADATA_TYPE = StringType()
+METADATA_IS_VARIANT = False
+_VariantVal = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Study-level schema

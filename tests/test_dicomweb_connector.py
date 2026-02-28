@@ -310,25 +310,19 @@ class TestConnector:
         assert records[0]["metadata"] is not None
         import json as _json
 
-        from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import METADATA_IS_VARIANT
-
-        # On runtimes with VariantType metadata is a VariantVal; on older runtimes a JSON string.
+        # metadata is always a JSON string (StringType column)
         meta = records[0]["metadata"]
-        parsed = meta.toPython() if METADATA_IS_VARIANT else _json.loads(meta)
+        assert isinstance(meta, str)
+        parsed = _json.loads(meta)
         assert "00080018" in parsed
 
-    def test_build_metadata_map_returns_variant_val(self, dicomweb_options):
-        """_build_metadata_map must return VariantVal on DBR 15.x+ (METADATA_IS_VARIANT=True).
+    def test_build_metadata_map_returns_json_string(self, dicomweb_options):
+        """_build_metadata_map must always return a JSON string (StringType column).
 
-        Spark's convert_variant() only accepts None or a VariantVal — passing a
-        plain dict or JSON string raises MALFORMED_VARIANT in the executor.
+        metadata is stored as StringType to avoid Spark's convert_variant()
+        executor issues on DBR serverless.  Callers can CAST to VARIANT in SQL.
         """
         import json as _json
-
-        from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import (
-            METADATA_IS_VARIANT,
-            _VariantVal,
-        )
 
         connector = DICOMwebLakeflowConnect(dicomweb_options)
         meta_obj = {
@@ -341,20 +335,13 @@ class TestConnector:
         assert len(result) == 1
         value = next(iter(result.values()))
 
-        if METADATA_IS_VARIANT:
-            # Must be a VariantVal so Spark's convert_variant can encode it
-            assert isinstance(value, _VariantVal), (
-                f"Expected VariantVal, got {type(value).__name__}. "
-                "Spark's convert_variant raises MALFORMED_VARIANT for other types."
-            )
-            # Verify round-trip: toPython() recovers the original keys
-            parsed = value.toPython()
-            assert "00080018" in parsed
-        else:
-            # Older runtimes: JSON string
-            assert isinstance(value, str)
-            parsed = _json.loads(value)
-            assert "00080018" in parsed
+        # Must always be a plain JSON string
+        assert isinstance(value, str), (
+            f"Expected str, got {type(value).__name__}. "
+            "A non-string type would crash Spark's StringType column converter."
+        )
+        parsed = _json.loads(value)
+        assert "00080018" in parsed
 
     def test_connection_name_explicit(self, studies_response):
         """Explicit connection_name option overrides the base_url default."""
