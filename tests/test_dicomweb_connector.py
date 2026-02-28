@@ -161,6 +161,19 @@ class TestConnector:
         assert meta["primary_keys"] == ["StudyInstanceUID"]
         assert meta["cursor_field"] == "StudyDate"
         assert meta["ingestion_type"] == "cdc"
+        assert "column_expressions" not in meta  # only instances has this
+
+    def test_read_table_metadata_instances_has_column_expressions(self, dicomweb_options):
+        """instances metadata must include column_expressions for parse_json(metadata).
+
+        The ingestion pipeline applies these expressions via selectExpr() in the
+        SDP view so the final Delta table stores metadata as VARIANT, not STRING.
+        """
+        connector = DICOMwebLakeflowConnect(dicomweb_options)
+        meta = connector.read_table_metadata("instances", {})
+        assert meta["primary_keys"] == ["SOPInstanceUID"]
+        assert "column_expressions" in meta
+        assert meta["column_expressions"]["metadata"] == "parse_json(metadata)"
 
     def test_read_table_studies(self, dicomweb_options, studies_response):
         connector = DICOMwebLakeflowConnect(dicomweb_options)

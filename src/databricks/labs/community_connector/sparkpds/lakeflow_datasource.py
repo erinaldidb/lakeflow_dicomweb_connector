@@ -6,7 +6,7 @@ from pyspark.sql.datasource import (
     DataSourceReader,
     SimpleDataSourceStreamReader,
 )
-from pyspark.sql.types import ArrayType, StringType, StructField, StructType
+from pyspark.sql.types import ArrayType, MapType, StringType, StructField, StructType
 
 from databricks.labs.community_connector.interface import LakeflowConnect
 from databricks.labs.community_connector.libs.utils import parse_value
@@ -86,6 +86,9 @@ class LakeflowSource(DataSource):
                     StructField("primary_keys", ArrayType(StringType()), True),
                     StructField("cursor_field", StringType(), True),
                     StructField("ingestion_type", StringType(), True),
+                    # Optional per-column SQL expressions applied in the pipeline
+                    # view before the SCD merge, e.g. {"metadata": "parse_json(metadata)"}.
+                    StructField("column_expressions", MapType(StringType(), StringType()), True),
                 ]
             )
         return self.lakeflow_connect.get_table_schema(table, self.options)

@@ -136,11 +136,17 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                 "cursor_field": "probe_timestamp",
                 "ingestion_type": "cdc",
             }
-        return {
+        meta: dict = {
             "primary_keys": [_primary_key(table_name)],
             "cursor_field": "StudyDate",
             "ingestion_type": "cdc",
         }
+        if table_name == "instances":
+            # metadata is stored as a StringType JSON string by the connector.
+            # The pipeline view applies parse_json() so the final Delta table
+            # column is VARIANT — no manual CAST required.
+            meta["column_expressions"] = {"metadata": "parse_json(metadata)"}
+        return meta
 
     # ------------------------------------------------------------------
     # Data reading

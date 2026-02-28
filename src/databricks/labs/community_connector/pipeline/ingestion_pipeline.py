@@ -19,22 +19,39 @@ class SdpTableConfig:  # pylint: disable=too-many-instance-attributes
     sequence_by: str
     scd_type: str
     with_deletes: bool = False
+    # Optional per-column SQL expressions applied after .load() and before the
+    # SCD merge.  Keys are column names; values are SQL expressions whose result
+    # replaces that column, e.g. {"metadata": "parse_json(metadata)"}.
+    column_expressions: dict = None
 
 
 def _build_view_name(source_table: str, flow_type: str) -> str:
     return f"source_{source_table}_{flow_type}"
 
 
+def _apply_column_expressions(df, column_expressions: dict):
+    """Apply per-column SQL expressions to a DataFrame (e.g. parse_json(metadata)).
+
+    Each key in column_expressions is a column name; each value is a SQL
+    expression whose result replaces that column in the same position.
+    """
+    if not column_expressions:
+        return df
+    exprs = [f"{column_expressions[c]} AS {c}" if c in column_expressions else c for c in df.columns]
+    return df.selectExpr(*exprs)
+
+
 def _create_cdc_table(spark, connection_name: str, config: SdpTableConfig) -> None:
     @sdp.view(name=config.view_name)
     def v():
-        return (
+        df = (
             spark.readStream.format("lakeflow_connect")
             .option("databricks.connection", connection_name)
             .option("tableName", config.source_table)
             .options(**config.table_config)
             .load()
         )
+        return _apply_column_expressions(df, config.column_expressions)
 
     sdp.create_streaming_table(name=config.destination_table)
     sdp.apply_changes(
@@ -73,13 +90,14 @@ def _create_cdc_table(spark, connection_name: str, config: SdpTableConfig) -> No
 def _create_snapshot_table(spark, connection_name: str, config: SdpTableConfig) -> None:
     @sdp.view(name=config.view_name)
     def snapshot_view():
-        return (
+        df = (
             spark.read.format("lakeflow_connect")
             .option("databricks.connection", connection_name)
             .option("tableName", config.source_table)
             .options(**config.table_config)
             .load()
         )
+        return _apply_column_expressions(df, config.column_expressions)
 
     sdp.create_streaming_table(name=config.destination_table)
     sdp.apply_changes_from_snapshot(
@@ -93,13 +111,14 @@ def _create_snapshot_table(spark, connection_name: str, config: SdpTableConfig) 
 def _create_append_table(spark, connection_name: str, config: SdpTableConfig) -> None:
     @sdp.view(name=config.view_name)
     def v():
-        return (
+        df = (
             spark.readStream.format("lakeflow_connect")
             .option("databricks.connection", connection_name)
             .option("tableName", config.source_table)
             .options(**config.table_config)
             .load()
         )
+        return _apply_column_expressions(df, config.column_expressions)
 
     sdp.create_streaming_table(name=config.destination_table)
 
@@ -126,6 +145,8 @@ def _get_table_metadata(spark, connection_name: str, table_list: list[str], tabl
             table_metadata["cursor_field"] = row["cursor_field"]
         if row["ingestion_type"] is not None:
             table_metadata["ingestion_type"] = row["ingestion_type"]
+        if row["column_expressions"] is not None:
+            table_metadata["column_expressions"] = dict(row["column_expressions"])
         metadata[row["tableName"]] = table_metadata
     return metadata
 
@@ -169,6 +190,7 @@ def ingest(spark, pipeline_spec: dict) -> None:
             sequence_by=sequence_by,
             scd_type=scd_type,
             with_deletes=(ingestion_type == "cdc_with_deletes"),
+            column_expressions=metadata[table].get("column_expressions"),
         )
 
         if ingestion_type in ("cdc", "cdc_with_deletes"):

@@ -206,35 +206,16 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `ContentDate` | STRING | 00080023 | Content creation date `YYYYMMDD` |
 | `ContentTime` | STRING | 00080033 | Content creation time `HHMMSS` |
 | `dicom_file_path` | STRING | — | Path to `.dcm` or `.jpg` file in UC Volume (populated when `fetch_dicom_files=true`) |
-| `metadata` | STRING | — | Full DICOM JSON for this instance (populated when `fetch_metadata=true`). Stored as a JSON string — use the `instances_v` view for native `VARIANT` access. |
+| `metadata` | VARIANT | — | Full DICOM JSON for this instance (populated when `fetch_metadata=true`). The pipeline applies `parse_json(metadata)` automatically before the SCD merge, so the column is stored as native `VARIANT` in the Delta table. |
 | `connection_name` | STRING | — | UC connection name (lineage) — defaults to `base_url` |
 
-### `instances_v` (view)
-- **Description**: Enriched view over `instances` that exposes `metadata` as a native `VARIANT` column via `PARSE_JSON()`. Created automatically by the pipeline notebook in step 4. Use this view for semi-structured DICOM metadata queries; use the underlying `instances` table for full-fidelity Delta operations (merge, time travel, etc.).
-
-| Column | Type | Description |
-|--------|------|-------------|
-| *(all `instances` columns)* | — | Same as `instances` |
-| `metadata` | VARIANT | `PARSE_JSON(instances.metadata)` — enables semi-structured path queries |
-
-**Example queries:**
-
+**Querying `metadata`:**
 ```sql
--- Extract Modality from DICOM JSON
-SELECT SOPInstanceUID, metadata:00080060.Value[0] AS Modality
-FROM instances_v
-WHERE fetch_metadata was enabled;
+-- Extract Modality via DICOM tag path
+SELECT SOPInstanceUID, metadata:00080060.Value[0] AS Modality FROM instances;
 
--- Find all CT instances
-SELECT * FROM instances_v
-WHERE metadata:00080060.Value[0] = 'CT';
-
--- Recreate the view manually (idempotent)
-CREATE OR REPLACE VIEW main.dicom_bronze.instances_v AS
-SELECT SOPInstanceUID, SeriesInstanceUID, StudyInstanceUID, SOPClassUID,
-       InstanceNumber, StudyDate, ContentDate, ContentTime,
-       dicom_file_path, PARSE_JSON(metadata) AS metadata, connection_name
-FROM main.dicom_bronze.instances;
+-- Filter all CT instances
+SELECT * FROM instances WHERE metadata:00080060.Value[0] = 'CT';
 ```
 
 ### `diagnostics`

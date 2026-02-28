@@ -544,7 +544,10 @@ def register_lakeflow_source(spark):
                 "series": "SeriesInstanceUID",
                 "instances": "SOPInstanceUID",
             }
-            return {"primary_keys": [pk_map[table_name]], "cursor_field": "StudyDate", "ingestion_type": "cdc"}
+            meta = {"primary_keys": [pk_map[table_name]], "cursor_field": "StudyDate", "ingestion_type": "cdc"}
+            if table_name == "instances":
+                meta["column_expressions"] = {"metadata": "parse_json(metadata)"}
+            return meta
 
         def read_table(
             self, table_name: str, start_offset: dict, table_options: dict[str, str]
