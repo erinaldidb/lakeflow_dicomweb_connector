@@ -109,6 +109,11 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
             token=options.get("token"),
         )
 
+        # Lineage identifier injected into every record.
+        # Defaults to base_url so records are always traceable even when
+        # the connection_name option is not explicitly set.
+        self._connection_name: str = options.get("connection_name") or base_url
+
         # Cached WADO-RS mode detected at runtime (only used when wado_mode=auto)
         self._wado_mode_detected: str | None = None
 
@@ -237,7 +242,9 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                 logger.debug("Empty studies page at offset=%d — pagination complete", offset)
                 break
             for raw in raw_records:
-                yield parse_study(raw)
+                record = parse_study(raw)
+                record["connection_name"] = self._connection_name
+                yield record
             if len(raw_records) < page_size:
                 break
             offset += page_size
@@ -269,6 +276,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                         record["StudyDate"] = study.get("StudyDate")
                     if not record.get("StudyInstanceUID"):
                         record["StudyInstanceUID"] = study_uid
+                    record["connection_name"] = self._connection_name
                     yield record
             if len(studies) < page_size:
                 break
@@ -335,6 +343,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                         # Attach DICOM file or frame
                         if fetch_files:
                             record = self._attach_dicom_file(record, volume_path, wado_mode)
+                        record["connection_name"] = self._connection_name
                         yield record
             if len(studies) < page_size:
                 break
@@ -582,6 +591,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                     "latency_ms": None,
                     "notes": "Could not probe — no sample UID available from the server",
                     "probe_timestamp": probe_timestamp,
+                    "connection_name": self._connection_name,
                 }
                 continue
 
@@ -620,6 +630,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                 "latency_ms": result["latency_ms"],
                 "notes": notes,
                 "probe_timestamp": probe_timestamp,
+                "connection_name": self._connection_name,
             }
 
 

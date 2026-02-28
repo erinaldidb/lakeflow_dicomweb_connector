@@ -58,6 +58,7 @@ To configure the connector, provide the following parameters when creating your 
 | `username` | string | No | Username for Basic authentication. Required when `auth_type=basic`. | `svc-dicom` |
 | `password` | string | No | Password for Basic authentication. Use a Databricks Secret. Required when `auth_type=basic`. | `secret('scope','dicom-password')` |
 | `token` | string | No | Bearer token for token-based authentication. Use a Databricks Secret. Required when `auth_type=bearer`. | `secret('scope','dicom-token')` |
+| `connection_name` | string | No | Human-readable name injected as `connection_name` in every row of all tables. Defaults to `base_url`. Set this when ingesting from multiple DICOMweb sources into shared Delta tables to enable full lineage tracing back to the originating system. | `orthanc-prod` |
 
 ### Obtaining Your Endpoint URL and Credentials
 
@@ -85,6 +86,7 @@ TYPE dicomweb
 OPTIONS (
   base_url                 'https://your-pacs.example.com/dicom-web',
   auth_type                'none',
+  connection_name          'my-pacs-prod',
   sourceName               'dicomweb',
   externalOptionsAllowList 'fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests,fetch_metadata,wado_mode'
   -- For Basic auth:
@@ -115,6 +117,7 @@ In the Additional Options table, add the following rows:
 |-----|-------|
 | `base_url` | `https://your-pacs.example.com/dicom-web` |
 | `auth_type` | `none` (or `basic` / `bearer`) |
+| `connection_name` | `my-pacs-prod` (any label you choose) |
 | `sourceName` | `dicomweb` |
 | `externalOptionsAllowList` | `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests,fetch_metadata,wado_mode` |
 
@@ -164,6 +167,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `ModalitiesInStudy` | ARRAY\<STRING\> | 00080061 | Modalities present (e.g., `["CT","SR"]`) |
 | `NumberOfStudyRelatedSeries` | INT | 00201206 | Number of series in this study |
 | `NumberOfStudyRelatedInstances` | INT | 00201208 | Total number of DICOM instances |
+| `connection_name` | STRING | — | UC connection name (lineage) — defaults to `base_url` |
 
 ### `series`
 - **Description**: Series-level metadata. One row per DICOM series within a study.
@@ -182,6 +186,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `Modality` | STRING | 00080060 | Imaging modality (CT, MR, PT, …) |
 | `BodyPartExamined` | STRING | 00180015 | Body part (CHEST, BRAIN, …) |
 | `SeriesDate` | STRING | 00080021 | Series acquisition date `YYYYMMDD` |
+| `connection_name` | STRING | — | UC connection name (lineage) — defaults to `base_url` |
 
 ### `instances`
 - **Description**: SOP instance (image) metadata. One row per DICOM file.
@@ -202,6 +207,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `ContentTime` | STRING | 00080033 | Content creation time `HHMMSS` |
 | `dicom_file_path` | STRING | — | Path to `.dcm` or `.jpg` file in UC Volume (populated when `fetch_dicom_files=true`) |
 | `metadata` | VARIANT / STRING | — | Full DICOM JSON for this instance (populated when `fetch_metadata=true`). `VARIANT` on DBR 15.x+, JSON string on older runtimes. |
+| `connection_name` | STRING | — | UC connection name (lineage) — defaults to `base_url` |
 
 ### `diagnostics`
 - **Description**: Capability probe results. One row per DICOMweb endpoint, updated on every pipeline trigger. Useful for initial connectivity validation and ongoing health monitoring.
@@ -220,6 +226,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `latency_ms` | INT | Round-trip latency in milliseconds |
 | `notes` | STRING | Additional context: error message, access-denied reason, etc. |
 | `probe_timestamp` | STRING | ISO-8601 UTC timestamp of this probe run |
+| `connection_name` | STRING | UC connection name (lineage) — defaults to `base_url` |
 
 **Example output for the public Orthanc demo (`https://orthanc.uclouvain.be/demo/dicom-web`):**
 

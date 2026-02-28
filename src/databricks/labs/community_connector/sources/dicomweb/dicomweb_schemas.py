@@ -42,6 +42,8 @@ STUDIES_SCHEMA = StructType(
         StructField("ModalitiesInStudy", ArrayType(StringType()), nullable=True),
         StructField("NumberOfStudyRelatedSeries", IntegerType(), nullable=True),
         StructField("NumberOfStudyRelatedInstances", IntegerType(), nullable=True),
+        # Lineage: UC connection name that produced this record
+        StructField("connection_name", StringType(), nullable=True),
     ]
 )
 
@@ -60,6 +62,8 @@ SERIES_SCHEMA = StructType(
         StructField("Modality", StringType(), nullable=True),
         StructField("BodyPartExamined", StringType(), nullable=True),
         StructField("SeriesDate", StringType(), nullable=True),
+        # Lineage: UC connection name that produced this record
+        StructField("connection_name", StringType(), nullable=True),
     ]
 )
 
@@ -83,6 +87,8 @@ INSTANCES_SCHEMA = StructType(
         # Full DICOM JSON for this instance; populated when fetch_metadata=true.
         # VariantType on DBR 15.x+, StringType (JSON string) on older runtimes.
         StructField("metadata", _METADATA_TYPE, nullable=True),
+        # Lineage: UC connection name that produced this record
+        StructField("connection_name", StringType(), nullable=True),
     ]
 )
 
@@ -111,6 +117,8 @@ DIAGNOSTICS_SCHEMA = StructType(
         StructField("notes", StringType(), nullable=True),
         # ISO-8601 timestamp of this probe run (UTC)
         StructField("probe_timestamp", StringType(), nullable=False),
+        # Lineage: UC connection name that produced this record
+        StructField("connection_name", StringType(), nullable=True),
     ]
 )
 

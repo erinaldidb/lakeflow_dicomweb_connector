@@ -275,6 +275,7 @@ def register_lakeflow_source(spark):
             StructField("ModalitiesInStudy", ArrayType(StringType()), nullable=True),
             StructField("NumberOfStudyRelatedSeries", IntegerType(), nullable=True),
             StructField("NumberOfStudyRelatedInstances", IntegerType(), nullable=True),
+            StructField("connection_name", StringType(), nullable=True),
         ]
     )
 
@@ -288,6 +289,7 @@ def register_lakeflow_source(spark):
             StructField("Modality", StringType(), nullable=True),
             StructField("BodyPartExamined", StringType(), nullable=True),
             StructField("SeriesDate", StringType(), nullable=True),
+            StructField("connection_name", StringType(), nullable=True),
         ]
     )
 
@@ -304,6 +306,7 @@ def register_lakeflow_source(spark):
             StructField("dicom_file_path", StringType(), nullable=True),
             # Full DICOM JSON; populated when fetch_metadata=true (StringType fallback for older runtimes)
             StructField("metadata", StringType(), nullable=True),
+            StructField("connection_name", StringType(), nullable=True),
         ]
     )
 
@@ -318,6 +321,7 @@ def register_lakeflow_source(spark):
             StructField("latency_ms", IntegerType(), nullable=True),
             StructField("notes", StringType(), nullable=True),
             StructField("probe_timestamp", StringType(), nullable=False),
+            StructField("connection_name", StringType(), nullable=True),
         ]
     )
 
@@ -513,6 +517,7 @@ def register_lakeflow_source(spark):
                 password=options.get("password"),
                 token=options.get("token"),
             )
+            self._connection_name = options.get("connection_name") or base_url
             self._wado_mode_detected = None
 
         def list_tables(self) -> list[str]:
@@ -583,7 +588,9 @@ def register_lakeflow_source(spark):
                 if not raw_records:
                     break
                 for raw in raw_records:
-                    yield _parse_study(raw)
+                    record = _parse_study(raw)
+                    record["connection_name"] = self._connection_name
+                    yield record
                 if len(raw_records) < page_size:
                     break
                 offset += page_size
@@ -605,6 +612,7 @@ def register_lakeflow_source(spark):
                             record["StudyDate"] = study.get("StudyDate")
                         if not record.get("StudyInstanceUID"):
                             record["StudyInstanceUID"] = study_uid
+                        record["connection_name"] = self._connection_name
                         yield record
                 if len(studies) < page_size:
                     break
@@ -642,6 +650,7 @@ def register_lakeflow_source(spark):
                                 record["metadata"] = sop_to_meta.get(sop_uid) if sop_uid else None
                             if fetch_files:
                                 record = self._attach_dicom_file(record, volume_path, wado_mode)
+                            record["connection_name"] = self._connection_name
                             yield record
                 if len(studies) < page_size:
                     break
@@ -779,6 +788,7 @@ def register_lakeflow_source(spark):
                         "latency_ms": None,
                         "notes": "Could not probe — no sample UID available from the server",
                         "probe_timestamp": probe_timestamp,
+                        "connection_name": self._connection_name,
                     }
                     continue
                 result = self._client.probe_endpoint(path, accept=accept)
@@ -807,6 +817,7 @@ def register_lakeflow_source(spark):
                     "latency_ms": result["latency_ms"],
                     "notes": notes,
                     "probe_timestamp": probe_timestamp,
+                    "connection_name": self._connection_name,
                 }
 
         def _attach_dicom_file(self, record: dict, volume_path: str, wado_mode: str) -> dict:

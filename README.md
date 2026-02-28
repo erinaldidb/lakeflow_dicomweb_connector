@@ -89,6 +89,7 @@ for record in records_iter:
 | `username` | No | — | Basic auth username |
 | `password` | No | — | Basic auth password (use Databricks Secret) |
 | `token` | No | — | Bearer token (use Databricks Secret) |
+| `connection_name` | No | `base_url` | Human-readable name injected as `connection_name` in every row of every table. Set this when ingesting from multiple DICOMweb sources into the same Delta tables to enable full lineage tracing. |
 
 ## Table Options (per-table in pipeline spec)
 
@@ -133,6 +134,7 @@ Use `wado_mode=frames` explicitly for Static DICOMweb / S3 Static WADO Server de
 | `ModalitiesInStudy` | array\<string\> | 00080061 | Modalities present |
 | `NumberOfStudyRelatedSeries` | int | 00201206 | Series count |
 | `NumberOfStudyRelatedInstances` | int | 00201208 | Instance count |
+| `connection_name` | string | — | UC connection name (lineage) |
 
 ### `series`
 | Column | Type | Source Tag | Description |
@@ -145,6 +147,7 @@ Use `wado_mode=frames` explicitly for Static DICOMweb / S3 Static WADO Server de
 | `Modality` | string | 00080060 | Modality (CT, MR, …) |
 | `BodyPartExamined` | string | 00180015 | Body part |
 | `SeriesDate` | string | 00080021 | Series date YYYYMMDD |
+| `connection_name` | string | — | UC connection name (lineage) |
 
 ### `instances`
 | Column | Type | Source Tag | Description |
@@ -159,6 +162,7 @@ Use `wado_mode=frames` explicitly for Static DICOMweb / S3 Static WADO Server de
 | `ContentTime` | string | 00080033 | Content time HHMMSS |
 | `dicom_file_path` | string (nullable) | — | Path to `.dcm` or `.jpg` in Volume |
 | `metadata` | variant/string (nullable) | — | Full DICOM JSON for this instance; populated when `fetch_metadata=true`. `VariantType` on DBR 15.x+, JSON string on older runtimes. |
+| `connection_name` | string | — | UC connection name (lineage) |
 
 ### `diagnostics`
 
@@ -175,6 +179,7 @@ A special read-only table that probes your DICOMweb server on every pipeline tri
 | `latency_ms` | int | Round-trip latency in milliseconds |
 | `notes` | string | Additional context: error message, access-denied reason, etc. |
 | `probe_timestamp` | string (PK) | ISO-8601 UTC timestamp of this probe run |
+| `connection_name` | string | UC connection name (lineage) |
 
 **Endpoint coverage:**
 

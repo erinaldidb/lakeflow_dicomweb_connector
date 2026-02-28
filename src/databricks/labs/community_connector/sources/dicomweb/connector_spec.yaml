@@ -38,4 +38,14 @@ connection:
         Bearer token for token-based authentication.
         Required when auth_type is set to bearer.
 
+    - name: connection_name
+      type: string
+      required: false
+      description: >
+        Human-readable name for this connection, injected as the `connection_name`
+        column in every table (studies, series, instances, diagnostics).
+        Defaults to base_url when not set.
+        Set this when ingesting from multiple DICOMweb sources into the same
+        Delta tables so records can be traced back to their origin connection.
+
 external_options_allowlist: "fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests,fetch_metadata,wado_mode"

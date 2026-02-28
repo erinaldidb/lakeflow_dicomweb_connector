@@ -172,6 +172,8 @@ class TestConnector:
         assert records[0]["StudyInstanceUID"] == "1.2.840.113619.2.5.1762583153.215519.978957063.78"
         assert "study_date" in next_offset
         assert next_offset["page_offset"] == 0
+        # connection_name defaults to base_url when not explicitly set
+        assert all(r["connection_name"] == dicomweb_options["base_url"] for r in records)
 
     def test_read_table_series(self, dicomweb_options, studies_response, series_response):
         """Series now uses hierarchical: studies → query_series_for_study per study."""
@@ -202,6 +204,7 @@ class TestConnector:
         assert len(records) == 6
         assert all(r["dicom_file_path"] is None for r in records)
         assert all(r["metadata"] is None for r in records)
+        assert all(r["connection_name"] == dicomweb_options["base_url"] for r in records)
 
     def test_read_table_instances_fetch_files_missing_volume_raises(self, dicomweb_options):
         connector = DICOMwebLakeflowConnect(dicomweb_options)
@@ -310,6 +313,19 @@ class TestConnector:
         parsed = _json.loads(records[0]["metadata"])
         assert "00080018" in parsed
 
+    def test_connection_name_explicit(self, studies_response):
+        """Explicit connection_name option overrides the base_url default."""
+        opts = {
+            "base_url": "https://dicomweb.example.com",
+            "auth_type": "none",
+            "connection_name": "my-pacs-prod",
+        }
+        connector = DICOMwebLakeflowConnect(opts)
+        connector._client.query_studies = MagicMock(side_effect=[studies_response, []])
+        records_iter, _ = connector.read_table("studies", {}, {})
+        records = list(records_iter)
+        assert all(r["connection_name"] == "my-pacs-prod" for r in records)
+
     def test_read_table_pagination(self, dicomweb_options):
         page1 = [{"0020000D": {"vr": "UI", "Value": [f"1.2.{i}"]}} for i in range(2)]
         connector = DICOMwebLakeflowConnect(dicomweb_options)
@@ -409,6 +425,7 @@ class TestDiagnostics:
             assert "supported" in rec
             assert "probe_timestamp" in rec
             assert rec["supported"] in ("yes", "no", "unknown", "error", "partial")
+            assert rec["connection_name"] == dicomweb_options["base_url"]
         # next_offset contains probe_timestamp
         assert "probe_timestamp" in next_offset
 
