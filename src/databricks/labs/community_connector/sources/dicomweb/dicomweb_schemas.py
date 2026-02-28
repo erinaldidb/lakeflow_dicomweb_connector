@@ -19,14 +19,15 @@ from pyspark.sql.types import (
 # on older runtimes it stores a JSON string that can be CAST to VARIANT in SQL.
 try:
     from pyspark.sql.types import VariantType as _VariantType  # type: ignore[attr-defined]
+    from pyspark.sql.types import VariantVal as _VariantVal  # type: ignore[attr-defined]
 
     _METADATA_TYPE = _VariantType()
-    # On DBR 15.x+ (VariantType available) pass the parsed Python dict — Spark's
-    # convert_variant accepts dicts and converts them to the VARIANT binary encoding.
-    # Do NOT pass a JSON string: convert_variant re-encodes the value with json.dumps(),
-    # which would double-encode a string into a JSON string literal ("\"...\"").
+    # On DBR 15.x+ (VariantType available) Spark's convert_variant ONLY accepts None
+    # or a VariantVal object — plain dicts and JSON strings both raise MALFORMED_VARIANT.
+    # Use VariantVal.parseJson(json_string) to construct the correct value.
     METADATA_IS_VARIANT = True
 except ImportError:
+    _VariantVal = None  # type: ignore[assignment,misc]
     _METADATA_TYPE = StringType()
     # On older runtimes metadata is stored as a JSON string in a StringType column.
     METADATA_IS_VARIANT = False

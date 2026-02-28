@@ -69,6 +69,7 @@ from databricks.labs.community_connector.sources.dicomweb.dicomweb_parser import
 )
 from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import (
     METADATA_IS_VARIANT,
+    _VariantVal,
     get_schema,
 )
 
@@ -450,7 +451,10 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                     # VariantType: pass the Python dict — Spark's convert_variant
                     # handles dict → VARIANT binary encoding internally.
                     # StringType fallback: pass a JSON string for older runtimes.
-                    sop_to_meta[sop_uid] = meta_obj if METADATA_IS_VARIANT else json.dumps(meta_obj)
+                    if METADATA_IS_VARIANT:
+                        sop_to_meta[sop_uid] = _VariantVal.parseJson(json.dumps(meta_obj))
+                    else:
+                        sop_to_meta[sop_uid] = json.dumps(meta_obj)
             return sop_to_meta
         except Exception as exc:
             logger.warning("Failed to fetch series metadata %s/%s: %s", study_uid, series_uid, exc)

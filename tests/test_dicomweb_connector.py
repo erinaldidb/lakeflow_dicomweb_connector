@@ -312,9 +312,9 @@ class TestConnector:
 
         from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import METADATA_IS_VARIANT
 
-        # On runtimes with VariantType metadata is a dict; on older runtimes a JSON string.
+        # On runtimes with VariantType metadata is a VariantVal; on older runtimes a JSON string.
         meta = records[0]["metadata"]
-        parsed = meta if METADATA_IS_VARIANT else _json.loads(meta)
+        parsed = meta.toPython() if METADATA_IS_VARIANT else _json.loads(meta)
         assert "00080018" in parsed
 
     def test_connection_name_explicit(self, studies_response):
