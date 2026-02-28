@@ -166,6 +166,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 |--------|------|-----------|-------------|
 | `SeriesInstanceUID` | STRING (PK) | 0020000E | Globally unique series identifier |
 | `StudyInstanceUID` | STRING | 0020000D | Parent study UID |
+| `StudyDate` | STRING | 00080020 | Study date `YYYYMMDD` (cursor field — consistent with QIDO-RS filter) |
 | `SeriesNumber` | INT | 00200011 | Series number within the study |
 | `SeriesDescription` | STRING | 0008103E | Free-text series description |
 | `Modality` | STRING | 00080060 | Imaging modality (CT, MR, PT, …) |
@@ -186,6 +187,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `StudyInstanceUID` | STRING | 0020000D | Parent study UID |
 | `SOPClassUID` | STRING | 00080016 | SOP class (storage type) UID |
 | `InstanceNumber` | INT | 00200013 | Instance number within the series |
+| `StudyDate` | STRING | 00080020 | Study date `YYYYMMDD` (cursor field — consistent with QIDO-RS filter) |
 | `ContentDate` | STRING | 00080023 | Content creation date `YYYYMMDD` |
 | `ContentTime` | STRING | 00080033 | Content creation time `HHMMSS` |
 | `dicom_file_path` | STRING | — | Path to `.dcm` file in UC Volume (populated when `fetch_dicom_files=true`) |
@@ -219,6 +221,8 @@ Add the connector as a cluster library or install it at the top of your notebook
 ```python
 %pip install git+https://github.com/erinaldidb/lakeflow_dicomweb_connector.git
 ```
+
+The `lakeflow-community-connectors` framework is **vendored** into this package — no separate PyPI installation is needed.
 
 ### Step 2: Configure Your Pipeline
 
@@ -327,9 +331,11 @@ ingest(spark, pipeline_spec)
    - Run `studies` and `series` before enabling `instances`, which is typically the largest table
 
 5. **`dicom_file_path` is NULL despite `fetch_dicom_files=true`**
-   - Check the connector logs for WADO-RS errors (the connector logs a WARNING and continues rather than failing the batch)
-   - Verify the Volume path exists and the cluster's service principal has write access
+   - The connector handles write failures gracefully — if WADO-RS retrieval or the Volume write fails, `dicom_file_path` is set to `NULL` and the stream continues rather than crashing
+   - Check the connector logs for `WADO-RS retrieval failed` ERROR messages to identify the root cause
+   - Unity Catalog Volume FUSE mounts do not support `mkdir` via standard POSIX syscalls from streaming worker subprocesses — the connector works around this by attempting the write directly; if the parent path does not pre-exist on the Volume, the write will fail silently
    - Confirm WADO-RS is enabled on the PACS (some systems enable QIDO-RS but not WADO-RS)
+   - Verify the cluster's service principal has write (`WRITE FILES`) privilege on the target Volume
 
 6. **Duplicate records after re-run**
    - `SCD_TYPE_1` (upsert on primary key) is the recommended `scd_type` — it prevents duplicates

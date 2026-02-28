@@ -24,8 +24,10 @@ A [Lakeflow Community Connector](https://github.com/databrickslabs/lakeflow-comm
 ## Installation
 
 ```bash
-pip install git+https://github.com/databrickslabs/lakeflow-dicomweb-connector.git
+pip install git+https://github.com/erinaldidb/lakeflow_dicomweb_connector.git
 ```
+
+The `lakeflow-community-connectors` framework is **vendored** into this package — no additional PyPI dependencies beyond `pyspark`, `requests`, and `pydantic`.
 
 Or add to your cluster's library configuration.
 
@@ -96,6 +98,7 @@ for record in records_iter:
 |--------|------|-----------|-------------|
 | `SeriesInstanceUID` | string (PK) | 0020000E | DICOM Series UID |
 | `StudyInstanceUID` | string | 0020000D | Parent Study UID |
+| `StudyDate` | string | 00080020 | Study date YYYYMMDD (cursor field) |
 | `SeriesNumber` | int | 00200011 | Series number |
 | `SeriesDescription` | string | 0008103E | Series description |
 | `Modality` | string | 00080060 | Modality (CT, MR, …) |
@@ -110,6 +113,7 @@ for record in records_iter:
 | `StudyInstanceUID` | string | 0020000D | Parent Study UID |
 | `SOPClassUID` | string | 00080016 | SOP Class UID |
 | `InstanceNumber` | int | 00200013 | Instance number |
+| `StudyDate` | string | 00080020 | Study date YYYYMMDD (cursor field) |
 | `ContentDate` | string | 00080023 | Content date YYYYMMDD |
 | `ContentTime` | string | 00080033 | Content time HHMMSS |
 | `dicom_file_path` | string (nullable) | — | Path to `.dcm` in Volume |
@@ -169,16 +173,27 @@ EOF
 ## Project Structure
 
 ```
-src/
-  databricks/labs/community_connector/sources/dicomweb/
+src/databricks/labs/community_connector/
+  interface/
+    lakeflow_connect.py        LakeflowConnect ABC (vendored from official framework)
+  libs/
+    spec_parser.py             Pipeline spec parser (vendored)
+    utils.py                   PySpark type conversion utilities (vendored)
+  pipeline/
+    ingestion_pipeline.py      ingest() entry point (vendored)
+  sparkpds/
+    registry.py                register() function (vendored)
+    lakeflow_datasource.py     Spark Python DataSource wrappers (vendored)
+  sources/dicomweb/
     __init__.py
-    dicomweb.py           Main connector class
-    dicomweb_client.py    HTTP client (QIDO-RS + WADO-RS)
-    dicomweb_schemas.py   PySpark StructType definitions
-    dicomweb_parser.py    DICOM JSON tag → Python dict parser
-    connector_spec.yaml   Connector parameter specification
+    dicomweb.py                Main connector class
+    dicomweb_client.py         HTTP client (QIDO-RS + WADO-RS)
+    dicomweb_schemas.py        PySpark StructType definitions
+    dicomweb_parser.py         DICOM JSON tag → Python dict parser
+    connector_spec.yaml        Connector parameter specification
+    _generated_dicomweb_python_source.py  Self-contained merged file for register()
 notebooks/
-  dicomweb_pipeline.py    Example ingestion notebook
+  dicomweb_pipeline.py         Example ingestion notebook
 tests/
   conftest.py
   test_dicomweb_client.py
