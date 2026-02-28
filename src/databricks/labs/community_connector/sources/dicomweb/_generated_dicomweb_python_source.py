@@ -263,6 +263,13 @@ def register_lakeflow_source(spark):
     # sources/dicomweb/dicomweb_schemas.py
     ########################################################
 
+    try:
+        from pyspark.sql.types import VariantType as _VariantType  # type: ignore[attr-defined]
+
+        _METADATA_TYPE = _VariantType()
+    except ImportError:
+        _METADATA_TYPE = StringType()
+
     STUDIES_SCHEMA = StructType(
         [
             StructField("StudyInstanceUID", StringType(), nullable=False),
@@ -304,8 +311,9 @@ def register_lakeflow_source(spark):
             StructField("ContentDate", StringType(), nullable=True),
             StructField("ContentTime", StringType(), nullable=True),
             StructField("dicom_file_path", StringType(), nullable=True),
-            # Full DICOM JSON; populated when fetch_metadata=true (StringType fallback for older runtimes)
-            StructField("metadata", StringType(), nullable=True),
+            # Full DICOM JSON; populated when fetch_metadata=true.
+            # VariantType on DBR 15.x+, StringType (JSON string) on older runtimes.
+            StructField("metadata", _METADATA_TYPE, nullable=True),
             StructField("connection_name", StringType(), nullable=True),
         ]
     )
