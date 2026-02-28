@@ -75,6 +75,8 @@ for record in records_iter:
 
 ## Table Options (per-table in pipeline spec)
 
+> **Important:** every option listed below must be included in the `externalOptionsAllowList` value of your Unity Catalog connection, otherwise Lakeflow rejects it at runtime with *"Option X is not allowed by connection Y and cannot be provided externally."* Use the full allowlist value: `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests`
+
 | Option | Default | Description |
 |--------|---------|-------------|
 | `page_size` | `100` | Records per QIDO-RS request |

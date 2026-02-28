@@ -83,8 +83,10 @@ A Unity Catalog connection can be created using SQL:
 CREATE CONNECTION `dicomweb-fevm`
 TYPE dicomweb
 OPTIONS (
-  base_url  'https://your-pacs.example.com/dicom-web',
-  auth_type 'none'
+  base_url                 'https://your-pacs.example.com/dicom-web',
+  auth_type                'none',
+  sourceName               'dicomweb',
+  externalOptionsAllowList 'fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests'
   -- For Basic auth:
   -- auth_type 'basic',
   -- username  'svc-dicom',
@@ -94,6 +96,8 @@ OPTIONS (
   -- token     secret('my-scope', 'dicom-token')
 );
 ```
+
+> **Important:** `externalOptionsAllowList` must include every option you intend to pass via `table_configuration` in the pipeline spec. Any option not listed here will be rejected by Lakeflow at pipeline runtime with an *"Option X is not allowed … and cannot be provided externally"* error.
 
 Or follow the Lakeflow Community Connector UI flow from the Databricks **Add Data** page — see the note below about UI field rendering for standalone connectors.
 
@@ -112,9 +116,15 @@ In the Additional Options table, add the following rows:
 | `base_url` | `https://your-pacs.example.com/dicom-web` |
 | `auth_type` | `none` (or `basic` / `bearer`) |
 | `sourceName` | `dicomweb` |
-| `externalOptionsAllowList` | `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date` |
+| `externalOptionsAllowList` | `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests` |
 
 Add `username` + `password` or `token` rows as needed for authenticated endpoints.
+
+> **Important — `externalOptionsAllowList`:** This comma-separated value controls which table-level options the pipeline is allowed to pass to the connection at runtime. Any option used in `table_configuration` inside your pipeline spec (e.g. `lookback_days`, `page_size`, `fetch_dicom_files`) **must** appear in this list, otherwise Lakeflow will reject it with:
+> ```
+> Option <name> is not allowed by connection <connection-name> and cannot be provided externally.
+> ```
+> Always include the full list shown above when creating the connection. If you add new options later, you must update the connection to add them to `externalOptionsAllowList`.
 
 **Option 2 — Use the community connector CLI with `--spec-path`**
 
