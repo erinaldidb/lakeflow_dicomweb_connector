@@ -164,3 +164,38 @@ register(spark, source_name)
 # On first run: fetches all available data from start_date (default: all history).
 # On subsequent runs: resumes from the last StudyDate cursor stored by Lakeflow.
 ingest(spark, pipeline_spec)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4. Create enriched view with VARIANT metadata
+# MAGIC
+# MAGIC The `instances` table stores DICOM metadata as a JSON string (`StringType`)
+# MAGIC to ensure compatibility across all Databricks runtimes.
+# MAGIC
+# MAGIC `instances_v` is a lightweight view that applies `PARSE_JSON()` to expose
+# MAGIC the `metadata` column as a native `VARIANT`, enabling semi-structured access:
+# MAGIC ```sql
+# MAGIC SELECT metadata:00080060.Value[0] AS Modality FROM instances_v
+# MAGIC ```
+
+# COMMAND ----------
+
+spark.sql(f"""
+CREATE OR REPLACE VIEW {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances_v AS
+SELECT
+  SOPInstanceUID,
+  SeriesInstanceUID,
+  StudyInstanceUID,
+  SOPClassUID,
+  InstanceNumber,
+  StudyDate,
+  ContentDate,
+  ContentTime,
+  dicom_file_path,
+  PARSE_JSON(metadata) AS metadata,
+  connection_name
+FROM {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances
+""")
+
+print(f"View ready: {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances_v")
