@@ -67,7 +67,10 @@ from databricks.labs.community_connector.sources.dicomweb.dicomweb_parser import
     parse_series,
     parse_study,
 )
-from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import get_schema
+from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import (
+    METADATA_IS_VARIANT,
+    get_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +447,10 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                 tag_obj = meta_obj.get("00080018")  # SOPInstanceUID tag
                 if tag_obj and tag_obj.get("Value"):
                     sop_uid = str(tag_obj["Value"][0])
-                    sop_to_meta[sop_uid] = json.dumps(meta_obj)
+                    # VariantType: pass the Python dict — Spark's convert_variant
+                    # handles dict → VARIANT binary encoding internally.
+                    # StringType fallback: pass a JSON string for older runtimes.
+                    sop_to_meta[sop_uid] = meta_obj if METADATA_IS_VARIANT else json.dumps(meta_obj)
             return sop_to_meta
         except Exception as exc:
             logger.warning("Failed to fetch series metadata %s/%s: %s", study_uid, series_uid, exc)

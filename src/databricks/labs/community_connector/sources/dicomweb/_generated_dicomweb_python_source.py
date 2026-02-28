@@ -267,8 +267,10 @@ def register_lakeflow_source(spark):
         from pyspark.sql.types import VariantType as _VariantType  # type: ignore[attr-defined]
 
         _METADATA_TYPE = _VariantType()
+        _METADATA_IS_VARIANT = True
     except ImportError:
         _METADATA_TYPE = StringType()
+        _METADATA_IS_VARIANT = False
 
     STUDIES_SCHEMA = StructType(
         [
@@ -677,7 +679,7 @@ def register_lakeflow_source(spark):
                     tag_obj = meta_obj.get("00080018")
                     if tag_obj and tag_obj.get("Value"):
                         sop_uid = str(tag_obj["Value"][0])
-                        sop_to_meta[sop_uid] = json.dumps(meta_obj)
+                        sop_to_meta[sop_uid] = meta_obj if _METADATA_IS_VARIANT else json.dumps(meta_obj)
                 return sop_to_meta
             except Exception:
                 return {}

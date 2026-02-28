@@ -21,8 +21,15 @@ try:
     from pyspark.sql.types import VariantType as _VariantType  # type: ignore[attr-defined]
 
     _METADATA_TYPE = _VariantType()
+    # On DBR 15.x+ (VariantType available) pass the parsed Python dict — Spark's
+    # convert_variant accepts dicts and converts them to the VARIANT binary encoding.
+    # Do NOT pass a JSON string: convert_variant re-encodes the value with json.dumps(),
+    # which would double-encode a string into a JSON string literal ("\"...\"").
+    METADATA_IS_VARIANT = True
 except ImportError:
     _METADATA_TYPE = StringType()
+    # On older runtimes metadata is stored as a JSON string in a StringType column.
+    METADATA_IS_VARIANT = False
 
 # ---------------------------------------------------------------------------
 # Study-level schema

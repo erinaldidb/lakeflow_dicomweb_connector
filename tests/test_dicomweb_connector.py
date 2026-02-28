@@ -308,9 +308,12 @@ class TestConnector:
         records = list(records_iter)
         # First record should have metadata populated (matches sop_uid from fixture)
         assert records[0]["metadata"] is not None
+        from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import METADATA_IS_VARIANT
         import json as _json
 
-        parsed = _json.loads(records[0]["metadata"])
+        # On runtimes with VariantType metadata is a dict; on older runtimes a JSON string.
+        meta = records[0]["metadata"]
+        parsed = meta if METADATA_IS_VARIANT else _json.loads(meta)
         assert "00080018" in parsed
 
     def test_connection_name_explicit(self, studies_response):
