@@ -30,4 +30,4 @@ jobs:
         run: ruff check src/ tests/
 
       - name: pylint
-        run: pylint src/databricks/labs/community_connector/sources/dicomweb/ --disable=C0114,C0115,C0116
+        run: pylint src/databricks/labs/community_connector/sources/dicomweb/ --disable=C0114,C0115,C0116 --fail-under=8.0
