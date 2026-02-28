@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Iterator
 
@@ -51,6 +52,7 @@ SUPPORTED_TABLES = ("studies", "series", "instances")
 DEFAULT_START_DATE = "19000101"  # Effectively "all history" on first run
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_LOOKBACK_DAYS = 1
+DEFAULT_DOWNLOAD_THREADS = 8
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +134,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
 
         fetch_files = table_options.get("fetch_dicom_files", "false").lower() == "true"
         volume_path = table_options.get("dicom_volume_path", "")
+        download_threads = int(table_options.get("download_threads", DEFAULT_DOWNLOAD_THREADS))
 
         if fetch_files and not volume_path and table_name == "instances":
             raise ValueError(
@@ -145,6 +148,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
             start_offset=page_offset,
             fetch_files=fetch_files,
             volume_path=volume_path,
+            download_threads=download_threads,
         )
         next_offset = {"study_date": today_str, "page_offset": 0}
         return records_iter, next_offset
@@ -161,6 +165,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
         start_offset: int,
         fetch_files: bool,
         volume_path: str,
+        download_threads: int,
     ) -> Iterator[dict]:
         offset = start_offset
         query_fn = _get_query_fn(self._client, table_name)
@@ -172,11 +177,16 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                 logger.debug("Empty page at offset=%d — pagination complete", offset)
                 break
 
-            for raw in raw_records:
-                record = parse_fn(raw)
-                if fetch_files and table_name == "instances":
-                    record = self._attach_dicom_file(record, volume_path)
-                yield record
+            records = [parse_fn(raw) for raw in raw_records]
+
+            if fetch_files and table_name == "instances":
+                with ThreadPoolExecutor(max_workers=download_threads) as pool:
+                    records = list(pool.map(
+                        lambda r: self._attach_dicom_file(r, volume_path),
+                        records,
+                    ))
+
+            yield from records
 
             if len(raw_records) < page_size:
                 # Partial page → last page

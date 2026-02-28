@@ -217,6 +217,33 @@ class TestConnector:
         for r in records:
             assert pathlib.Path(r["dicom_file_path"]).exists()
 
+    def test_read_table_instances_fetch_files_parallel(self, dicomweb_options, instances_response, tmp_path):
+        """download_threads > 1 should issue all retrieve_instance calls concurrently."""
+        import threading
+        connector = DICOMwebLakeflowConnect(dicomweb_options)
+        connector._client.query_instances = MagicMock(side_effect=[instances_response, []])
+
+        concurrent_calls = []
+        lock = threading.Lock()
+
+        def fake_retrieve(study_uid, series_uid, sop_uid):
+            with lock:
+                concurrent_calls.append(threading.current_thread().name)
+            return b"DICMDATA"
+
+        connector._client.retrieve_instance = MagicMock(side_effect=fake_retrieve)
+
+        records_iter, _ = connector.read_table(
+            "instances",
+            {},
+            {"fetch_dicom_files": "true", "dicom_volume_path": str(tmp_path), "download_threads": "4"},
+        )
+        records = list(records_iter)
+        assert len(records) == 3
+        assert all(r["dicom_file_path"] is not None for r in records)
+        # All three downloads were dispatched (one call per instance)
+        assert connector._client.retrieve_instance.call_count == 3
+
     def test_read_table_pagination(self, dicomweb_options):
         page1 = [{"0020000D": {"vr": "UI", "Value": [f"1.2.{i}"]}} for i in range(2)]
         connector = DICOMwebLakeflowConnect(dicomweb_options)

@@ -295,6 +295,7 @@ ingest(spark, pipeline_spec)
 | `start_date` | No | `19000101` | Initial cursor date for the very first run (`YYYYMMDD`). Use a recent date (e.g., `20240101`) to avoid full-history scans. |
 | `fetch_dicom_files` | No | `false` | When `true`, retrieves each `.dcm` file via WADO-RS and writes it to `dicom_volume_path` |
 | `dicom_volume_path` | No | — | Required when `fetch_dicom_files=true`. Unity Catalog Volume path where `.dcm` files are written. |
+| `download_threads` | No | `8` | Number of concurrent WADO-RS download threads per page. Increase for high-bandwidth environments; decrease if the PACS rate-limits connections. Only active when `fetch_dicom_files=true`. |
 
 ### Step 3: Run and Schedule the Pipeline
 

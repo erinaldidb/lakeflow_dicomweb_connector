@@ -74,6 +74,7 @@ for record in records_iter:
 | `start_date` | `19000101` | Initial cursor date (first run only) |
 | `fetch_dicom_files` | `false` | Also retrieve `.dcm` files via WADO-RS |
 | `dicom_volume_path` | — | Required when `fetch_dicom_files=true`; Unity Catalog Volume path |
+| `download_threads` | `8` | Concurrent WADO-RS download threads per page (only when `fetch_dicom_files=true`) |
 
 ---
 

@@ -6,6 +6,7 @@
 # ==============================================================================
 
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Iterator
@@ -380,6 +381,7 @@ def register_lakeflow_source(spark):
     _DEFAULT_START_DATE = "19000101"
     _DEFAULT_PAGE_SIZE = 100
     _DEFAULT_LOOKBACK_DAYS = 1
+    _DEFAULT_DOWNLOAD_THREADS = 8
 
     def _subtract_days(date_str: str, days: int) -> str:
         if date_str == _DEFAULT_START_DATE or days == 0:
@@ -437,14 +439,15 @@ def register_lakeflow_source(spark):
 
             fetch_files = table_options.get("fetch_dicom_files", "false").lower() == "true"
             volume_path = table_options.get("dicom_volume_path", "")
+            download_threads = int(table_options.get("download_threads", _DEFAULT_DOWNLOAD_THREADS))
             if fetch_files and not volume_path and table_name == "instances":
                 raise ValueError("fetch_dicom_files=true requires dicom_volume_path to be set")
 
-            records_iter = self._paginate(table_name, date_range, page_size, page_offset, fetch_files, volume_path)
+            records_iter = self._paginate(table_name, date_range, page_size, page_offset, fetch_files, volume_path, download_threads)
             next_offset = {"study_date": today_str, "page_offset": 0}
             return records_iter, next_offset
 
-        def _paginate(self, table_name, date_range, page_size, start_offset, fetch_files, volume_path):
+        def _paginate(self, table_name, date_range, page_size, start_offset, fetch_files, volume_path, download_threads):
             query_fn = {"studies": self._client.query_studies, "series": self._client.query_series, "instances": self._client.query_instances}[table_name]
             parse_fn = {"studies": _parse_study, "series": _parse_series, "instances": _parse_instance}[table_name]
             offset = start_offset
@@ -452,11 +455,14 @@ def register_lakeflow_source(spark):
                 raw_records = query_fn(date_range, limit=page_size, offset=offset)
                 if not raw_records:
                     break
-                for raw in raw_records:
-                    record = parse_fn(raw)
-                    if fetch_files and table_name == "instances":
-                        record = self._attach_dicom_file(record, volume_path)
-                    yield record
+                records = [parse_fn(raw) for raw in raw_records]
+                if fetch_files and table_name == "instances":
+                    with ThreadPoolExecutor(max_workers=download_threads) as pool:
+                        records = list(pool.map(
+                            lambda r: self._attach_dicom_file(r, volume_path),
+                            records,
+                        ))
+                yield from records
                 if len(raw_records) < page_size:
                     break
                 offset += page_size
