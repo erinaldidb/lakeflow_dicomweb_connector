@@ -219,4 +219,4 @@ tests/
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+[Databricks License](LICENSE) — same license as the official [lakeflow-community-connectors](https://github.com/databrickslabs/lakeflow-community-connectors) repository. Use is permitted solely in connection with the Databricks Services.
