@@ -1,5 +1,13 @@
 # Lakeflow DICOMweb Connector
 
+[![CI](https://github.com/erinaldidb/lakeflow_dicomweb_connector/actions/workflows/ci.yml/badge.svg)](https://github.com/erinaldidb/lakeflow_dicomweb_connector/actions/workflows/ci.yml)
+[![Lint](https://github.com/erinaldidb/lakeflow_dicomweb_connector/actions/workflows/lint.yml/badge.svg)](https://github.com/erinaldidb/lakeflow_dicomweb_connector/actions/workflows/lint.yml)
+[![Release](https://github.com/erinaldidb/lakeflow_dicomweb_connector/actions/workflows/release.yml/badge.svg)](https://github.com/erinaldidb/lakeflow_dicomweb_connector/actions/workflows/release.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Databricks](https://img.shields.io/badge/Databricks-Lakeflow-FF3621?logo=databricks&logoColor=white)](https://www.databricks.com/)
+[![DICOM](https://img.shields.io/badge/standard-DICOMweb%20QIDO--RS%20%2F%20WADO--RS-blue)](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/PS3.18.html)
+[![License](https://img.shields.io/badge/license-Databricks-lightgrey)](LICENSE)
+
 A [Lakeflow Community Connector](https://github.com/databrickslabs/lakeflow-community-connectors) that incrementally ingests DICOM study, series, and instance metadata from any DICOMweb-compliant VNA or PACS system into Databricks Delta tables.
 
 ## Features
