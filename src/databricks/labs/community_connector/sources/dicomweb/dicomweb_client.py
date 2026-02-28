@@ -10,6 +10,7 @@ Supports three authentication modes:
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import requests
@@ -92,33 +93,35 @@ class DICOMwebClient:
         }
         return self._qido_get("/studies", params)
 
-    def query_series(
-        self,
-        study_date_range: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict]:
-        """QIDO-RS: GET /series?StudyDate={range}&limit={n}&offset={n}"""
-        params: dict[str, Any] = {
-            "StudyDate": study_date_range,
-            "limit": limit,
-            "offset": offset,
-        }
-        return self._qido_get("/series", params)
+    def query_series_for_study(self, study_uid: str) -> list[dict]:
+        """
+        QIDO-RS: GET /studies/{study_uid}/series
 
-    def query_instances(
-        self,
-        study_date_range: str,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> list[dict]:
-        """QIDO-RS: GET /instances?StudyDate={range}&limit={n}&offset={n}"""
-        params: dict[str, Any] = {
-            "StudyDate": study_date_range,
-            "limit": limit,
-            "offset": offset,
-        }
-        return self._qido_get("/instances", params)
+        Hierarchical endpoint returning all series belonging to a single study.
+        Required by S3 Static WADO Server and recommended by the DICOMweb standard.
+
+        Args:
+            study_uid: DICOM StudyInstanceUID.
+
+        Returns:
+            List of DICOM JSON objects (dicts keyed by 8-char hex tag strings).
+        """
+        return self._qido_get(f"/studies/{study_uid}/series", {})
+
+    def query_instances_for_series(self, study_uid: str, series_uid: str) -> list[dict]:
+        """
+        QIDO-RS: GET /studies/{study_uid}/series/{series_uid}/instances
+
+        Hierarchical endpoint returning all instances belonging to a single series.
+
+        Args:
+            study_uid:  DICOM StudyInstanceUID.
+            series_uid: DICOM SeriesInstanceUID.
+
+        Returns:
+            List of DICOM JSON objects (dicts keyed by 8-char hex tag strings).
+        """
+        return self._qido_get(f"/studies/{study_uid}/series/{series_uid}/instances", {})
 
     # ------------------------------------------------------------------
     # WADO-RS
@@ -153,6 +156,162 @@ class DICOMwebClient:
             return _extract_first_multipart_part(resp.content, content_type)
         # Some servers return raw DICOM directly
         return resp.content
+
+    def retrieve_instance_frames(
+        self,
+        study_uid: str,
+        series_uid: str,
+        sop_uid: str,
+        frame_number: int = 1,
+    ) -> bytes:
+        """
+        WADO-RS: retrieve a specific frame from a DICOM instance.
+
+        Used by S3 Static WADO Server and other frame-based servers that do not
+        support full DICOM file retrieval via the standard WADO-RS instance endpoint.
+
+        GET {base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/frames/{n}
+
+        Args:
+            study_uid:    DICOM StudyInstanceUID.
+            series_uid:   DICOM SeriesInstanceUID.
+            sop_uid:      DICOM SOPInstanceUID.
+            frame_number: 1-based frame index (default: 1).
+
+        Returns:
+            Raw bytes of the frame image (JPEG, PNG, or similar).
+        """
+        url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/frames/{frame_number}"
+        logger.debug("WADO-RS frames GET %s", url)
+        resp = self._session.get(
+            url,
+            headers={"Accept": "image/jpeg, image/png, application/octet-stream"},
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        content_type = resp.headers.get("Content-Type", "")
+        if "multipart/related" in content_type:
+            return _extract_first_multipart_part(resp.content, content_type)
+        return resp.content
+
+    def retrieve_instance_metadata(
+        self,
+        study_uid: str,
+        series_uid: str,
+        sop_uid: str,
+    ) -> dict:
+        """
+        WADO-RS: retrieve full DICOM JSON metadata for a single instance.
+
+        GET {base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/metadata
+        Accept: application/dicom+json
+
+        Returns the complete DICOM JSON object for this SOP instance (all tags).
+        More targeted than retrieve_series_metadata() when only one instance
+        is needed — avoids downloading metadata for all siblings in the series.
+
+        Args:
+            study_uid:  DICOM StudyInstanceUID.
+            series_uid: DICOM SeriesInstanceUID.
+            sop_uid:    DICOM SOPInstanceUID.
+
+        Returns:
+            Single full DICOM JSON object (dict keyed by 8-char hex tag strings).
+            Returns an empty dict if the server returns 204 or an empty body.
+        """
+        url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/metadata"
+        logger.debug("WADO-RS instance metadata GET %s", url)
+        resp = self._session.get(
+            url,
+            headers={"Accept": "application/dicom+json"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 204:
+            return {}
+        resp.raise_for_status()
+        if not resp.content:
+            return {}
+        data = resp.json()
+        # Some servers return a list with one element, others return the object directly
+        if isinstance(data, list):
+            return data[0] if data else {}
+        return data
+
+    def retrieve_series_metadata(
+        self,
+        study_uid: str,
+        series_uid: str,
+    ) -> list[dict]:
+        """
+        WADO-RS: retrieve full DICOM JSON metadata for all instances in a series.
+
+        GET {base_url}/studies/{study_uid}/series/{series_uid}/metadata
+        Accept: application/dicom+json
+
+        Returns a list of complete DICOM JSON objects — one per instance — with
+        all tags (not just the subset returned by QIDO-RS).  Useful for populating
+        the `metadata` variant column or for servers (e.g. S3 Static WADO) that
+        serve instance data via this endpoint rather than via QIDO-RS /instances.
+
+        Args:
+            study_uid:  DICOM StudyInstanceUID.
+            series_uid: DICOM SeriesInstanceUID.
+
+        Returns:
+            List of full DICOM JSON objects (one per SOP instance).
+        """
+        url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/metadata"
+        logger.debug("WADO-RS metadata GET %s", url)
+        resp = self._session.get(
+            url,
+            headers={"Accept": "application/dicom+json"},
+            timeout=self.timeout,
+        )
+        if resp.status_code == 204:
+            return []
+        resp.raise_for_status()
+        if not resp.content:
+            return []
+        return resp.json()
+
+    def probe_endpoint(self, path: str, accept: str | None = None) -> dict:
+        """
+        Make a lightweight probe request and return capability information.
+
+        Used by the `diagnostics` table to test which DICOMweb endpoints are
+        available on the target server without raising exceptions.
+
+        Args:
+            path:   URL path relative to base_url (already includes query string
+                    if needed, e.g. "/studies?limit=1").
+            accept: Optional Accept header override.
+
+        Returns:
+            dict with keys: status_code (int|None), content_type (str|None),
+            latency_ms (int), error (str|None).
+        """
+        url = f"{self.base_url}{path}"
+        headers = {}
+        if accept:
+            headers["Accept"] = accept
+        t0 = time.monotonic()
+        try:
+            resp = self._session.get(url, headers=headers or None, timeout=self.timeout)
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            return {
+                "status_code": resp.status_code,
+                "content_type": resp.headers.get("Content-Type", ""),
+                "latency_ms": latency_ms,
+                "error": None,
+            }
+        except Exception as exc:
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            return {
+                "status_code": None,
+                "content_type": None,
+                "latency_ms": latency_ms,
+                "error": str(exc),
+            }
 
 
 # ---------------------------------------------------------------------------

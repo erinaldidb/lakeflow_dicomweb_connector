@@ -144,4 +144,6 @@ def parse_instance(dicom_obj: dict) -> dict:
     record = parse_dicom_json(dicom_obj, INSTANCE_TAG_MAP)
     # dicom_file_path is filled in later by the connector when WADO-RS retrieval is enabled
     record.setdefault("dicom_file_path", None)
+    # metadata is filled in later when fetch_metadata=true
+    record.setdefault("metadata", None)
     return record

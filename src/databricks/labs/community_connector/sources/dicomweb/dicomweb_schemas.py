@@ -13,6 +13,17 @@ from pyspark.sql.types import (
     StructType,
 )
 
+# VariantType was introduced in Spark 4.0 / Databricks Runtime 15.x.
+# Fall back to StringType on older runtimes so the package remains compatible
+# with pyspark>=3.5.0.  On DBR 15.x+ the metadata column stores a true VARIANT;
+# on older runtimes it stores a JSON string that can be CAST to VARIANT in SQL.
+try:
+    from pyspark.sql.types import VariantType as _VariantType  # type: ignore[attr-defined]
+
+    _METADATA_TYPE = _VariantType()
+except ImportError:
+    _METADATA_TYPE = StringType()
+
 # ---------------------------------------------------------------------------
 # Study-level schema
 # QIDO-RS /studies
@@ -69,6 +80,37 @@ INSTANCES_SCHEMA = StructType(
         StructField("ContentTime", StringType(), nullable=True),
         # Populated when fetch_dicom_files=true; path inside Unity Catalog Volume
         StructField("dicom_file_path", StringType(), nullable=True),
+        # Full DICOM JSON for this instance; populated when fetch_metadata=true.
+        # VariantType on DBR 15.x+, StringType (JSON string) on older runtimes.
+        StructField("metadata", _METADATA_TYPE, nullable=True),
+    ]
+)
+
+# ---------------------------------------------------------------------------
+# Diagnostics schema
+# WADO-RS / QIDO-RS capability probe results
+# ---------------------------------------------------------------------------
+
+DIAGNOSTICS_SCHEMA = StructType(
+    [
+        # Endpoint pattern, e.g. "/studies/{uid}/series/{uid}/instances/{uid}/frames/{n}"
+        StructField("endpoint", StringType(), nullable=False),
+        # Service category: QIDO-RS or WADO-RS
+        StructField("category", StringType(), nullable=True),
+        # Human-readable description of what the endpoint does
+        StructField("description", StringType(), nullable=True),
+        # "yes", "no", "unknown", or "error"
+        StructField("supported", StringType(), nullable=False),
+        # HTTP status code returned by the probe request (null on network error)
+        StructField("status_code", IntegerType(), nullable=True),
+        # Content-Type header from the response
+        StructField("content_type", StringType(), nullable=True),
+        # Round-trip latency in milliseconds
+        StructField("latency_ms", IntegerType(), nullable=True),
+        # Additional context: error message, Access Denied reason, etc.
+        StructField("notes", StringType(), nullable=True),
+        # ISO-8601 timestamp of this probe run (UTC)
+        StructField("probe_timestamp", StringType(), nullable=False),
     ]
 )
 
@@ -80,6 +122,7 @@ TABLE_SCHEMAS: dict[str, StructType] = {
     "studies": STUDIES_SCHEMA,
     "series": SERIES_SCHEMA,
     "instances": INSTANCES_SCHEMA,
+    "diagnostics": DIAGNOSTICS_SCHEMA,
 }
 
 

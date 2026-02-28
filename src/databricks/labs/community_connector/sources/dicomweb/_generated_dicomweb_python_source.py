@@ -8,9 +8,10 @@
 import json
 import logging
 import pathlib
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Iterator
 
@@ -255,6 +256,7 @@ def register_lakeflow_source(spark):
     def _parse_instance(dicom_obj: dict) -> dict:
         record = _parse_dicom_json(dicom_obj, INSTANCE_TAG_MAP)
         record.setdefault("dicom_file_path", None)
+        record.setdefault("metadata", None)
         return record
 
     ########################################################
@@ -300,6 +302,22 @@ def register_lakeflow_source(spark):
             StructField("ContentDate", StringType(), nullable=True),
             StructField("ContentTime", StringType(), nullable=True),
             StructField("dicom_file_path", StringType(), nullable=True),
+            # Full DICOM JSON; populated when fetch_metadata=true (StringType fallback for older runtimes)
+            StructField("metadata", StringType(), nullable=True),
+        ]
+    )
+
+    DIAGNOSTICS_SCHEMA = StructType(
+        [
+            StructField("endpoint", StringType(), nullable=False),
+            StructField("category", StringType(), nullable=True),
+            StructField("description", StringType(), nullable=True),
+            StructField("supported", StringType(), nullable=False),
+            StructField("status_code", IntegerType(), nullable=True),
+            StructField("content_type", StringType(), nullable=True),
+            StructField("latency_ms", IntegerType(), nullable=True),
+            StructField("notes", StringType(), nullable=True),
+            StructField("probe_timestamp", StringType(), nullable=False),
         ]
     )
 
@@ -307,6 +325,7 @@ def register_lakeflow_source(spark):
         "studies": STUDIES_SCHEMA,
         "series": SERIES_SCHEMA,
         "instances": INSTANCES_SCHEMA,
+        "diagnostics": DIAGNOSTICS_SCHEMA,
     }
 
     ########################################################
@@ -354,11 +373,13 @@ def register_lakeflow_source(spark):
         def query_studies(self, study_date_range: str, limit: int = 100, offset: int = 0) -> list:
             return self._qido_get("/studies", {"StudyDate": study_date_range, "limit": limit, "offset": offset})
 
-        def query_series(self, study_date_range: str, limit: int = 100, offset: int = 0) -> list:
-            return self._qido_get("/series", {"StudyDate": study_date_range, "limit": limit, "offset": offset})
+        def query_series_for_study(self, study_uid: str) -> list:
+            """QIDO-RS: GET /studies/{study_uid}/series — hierarchical series endpoint."""
+            return self._qido_get(f"/studies/{study_uid}/series", {})
 
-        def query_instances(self, study_date_range: str, limit: int = 100, offset: int = 0) -> list:
-            return self._qido_get("/instances", {"StudyDate": study_date_range, "limit": limit, "offset": offset})
+        def query_instances_for_series(self, study_uid: str, series_uid: str) -> list:
+            """QIDO-RS: GET /studies/{study_uid}/series/{series_uid}/instances — hierarchical instances endpoint."""
+            return self._qido_get(f"/studies/{study_uid}/series/{series_uid}/instances", {})
 
         def retrieve_instance(self, study_uid: str, series_uid: str, sop_uid: str) -> bytes:
             url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}"
@@ -372,6 +393,68 @@ def register_lakeflow_source(spark):
             if "multipart/related" in content_type:
                 return _extract_first_multipart_part(resp.content, content_type)
             return resp.content
+
+        def retrieve_instance_frames(
+            self, study_uid: str, series_uid: str, sop_uid: str, frame_number: int = 1
+        ) -> bytes:
+            """WADO-RS: GET .../instances/{sop_uid}/frames/{n} — frame-based retrieval for S3 Static WADO."""
+            url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/frames/{frame_number}"
+            resp = self._session.get(
+                url,
+                headers={"Accept": "image/jpeg, image/png, application/octet-stream"},
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            content_type = resp.headers.get("Content-Type", "")
+            if "multipart/related" in content_type:
+                return _extract_first_multipart_part(resp.content, content_type)
+            return resp.content
+
+        def retrieve_instance_metadata(self, study_uid: str, series_uid: str, sop_uid: str) -> dict:
+            """WADO-RS: GET .../instances/{uid}/metadata — full DICOM JSON for a single instance."""
+            url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/metadata"
+            resp = self._session.get(url, headers={"Accept": "application/dicom+json"}, timeout=self.timeout)
+            if resp.status_code == 204:
+                return {}
+            resp.raise_for_status()
+            if not resp.content:
+                return {}
+            data = resp.json()
+            if isinstance(data, list):
+                return data[0] if data else {}
+            return data
+
+        def retrieve_series_metadata(self, study_uid: str, series_uid: str) -> list:
+            """WADO-RS: GET .../series/{uid}/metadata — full DICOM JSON for all instances in a series."""
+            url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/metadata"
+            resp = self._session.get(url, headers={"Accept": "application/dicom+json"}, timeout=self.timeout)
+            if resp.status_code == 204:
+                return []
+            resp.raise_for_status()
+            if not resp.content:
+                return []
+            return resp.json()
+
+        def probe_endpoint(self, path: str, accept=None) -> dict:
+            """Probe a DICOMweb endpoint and return capability information without raising exceptions."""
+            url = f"{self.base_url}{path}"
+            headers = {"Accept": accept} if accept else {}
+            t0 = time.monotonic()
+            try:
+                resp = self._session.get(url, headers=headers or None, timeout=self.timeout)
+                return {
+                    "status_code": resp.status_code,
+                    "content_type": resp.headers.get("Content-Type", ""),
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                    "error": None,
+                }
+            except Exception as exc:
+                return {
+                    "status_code": None,
+                    "content_type": None,
+                    "latency_ms": int((time.monotonic() - t0) * 1000),
+                    "error": str(exc),
+                }
 
     def _parse_boundary(content_type: str) -> str | None:
         for segment in content_type.split(";"):
@@ -400,11 +483,13 @@ def register_lakeflow_source(spark):
     # sources/dicomweb/dicomweb.py
     ########################################################
 
-    _SUPPORTED_TABLES = ("studies", "series", "instances")
+    _SUPPORTED_TABLES = ("studies", "series", "instances", "diagnostics")
     _DEFAULT_START_DATE = "19000101"
     _DEFAULT_PAGE_SIZE = 100
     _DEFAULT_LOOKBACK_DAYS = 1
-    _DEFAULT_DOWNLOAD_THREADS = 8
+    _WADO_MODE_AUTO = "auto"
+    _WADO_MODE_FULL = "full"
+    _WADO_MODE_FRAMES = "frames"
 
     def _subtract_days(date_str: str, days: int) -> str:
         if date_str == _DEFAULT_START_DATE or days == 0:
@@ -428,6 +513,7 @@ def register_lakeflow_source(spark):
                 password=options.get("password"),
                 token=options.get("token"),
             )
+            self._wado_mode_detected = None
 
         def list_tables(self) -> list[str]:
             return list(_SUPPORTED_TABLES)
@@ -438,6 +524,8 @@ def register_lakeflow_source(spark):
             return _TABLE_SCHEMAS[table_name]
 
         def read_table_metadata(self, table_name: str, table_options: dict[str, str]) -> dict:
+            if table_name == "diagnostics":
+                return {"primary_keys": ["endpoint"], "cursor_field": "probe_timestamp", "ingestion_type": "cdc"}
             pk_map = {
                 "studies": "StudyInstanceUID",
                 "series": "SeriesInstanceUID",
@@ -451,6 +539,9 @@ def register_lakeflow_source(spark):
             if table_name not in _SUPPORTED_TABLES:
                 raise ValueError(f"Unknown table '{table_name}'")
 
+            if table_name == "diagnostics":
+                return self._run_diagnostics_probe(), {"probe_timestamp": datetime.now(tz=timezone.utc).isoformat()}
+
             start_offset = start_offset or {}
             page_size = int(table_options.get("page_size", _DEFAULT_PAGE_SIZE))
             lookback_days = int(table_options.get("lookback_days", _DEFAULT_LOOKBACK_DAYS))
@@ -462,50 +553,293 @@ def register_lakeflow_source(spark):
 
             fetch_files = table_options.get("fetch_dicom_files", "false").lower() == "true"
             volume_path = table_options.get("dicom_volume_path", "")
+            fetch_metadata = table_options.get("fetch_metadata", "false").lower() == "true"
+            wado_mode = table_options.get("wado_mode", _WADO_MODE_AUTO).lower()
             if fetch_files and not volume_path and table_name == "instances":
                 raise ValueError("fetch_dicom_files=true requires dicom_volume_path to be set")
 
-            records_iter = self._paginate(table_name, date_range, page_size, page_offset, fetch_files, volume_path)
+            records_iter = self._paginate(
+                table_name, date_range, page_size, page_offset, fetch_files, volume_path, fetch_metadata, wado_mode
+            )
             next_offset = {"study_date": today_str, "page_offset": 0}
             return records_iter, next_offset
 
-        def _paginate(self, table_name, date_range, page_size, start_offset, fetch_files, volume_path):
-            query_fn = {
-                "studies": self._client.query_studies,
-                "series": self._client.query_series,
-                "instances": self._client.query_instances,
-            }[table_name]
-            parse_fn = {"studies": _parse_study, "series": _parse_series, "instances": _parse_instance}[table_name]
+        def _paginate(
+            self, table_name, date_range, page_size, start_offset, fetch_files, volume_path, fetch_metadata, wado_mode
+        ):
+            if table_name == "studies":
+                yield from self._paginate_studies(date_range, page_size, start_offset)
+            elif table_name == "series":
+                yield from self._paginate_series(date_range, page_size, start_offset)
+            else:
+                yield from self._paginate_instances(
+                    date_range, page_size, start_offset, fetch_files, volume_path, fetch_metadata, wado_mode
+                )
+
+        def _paginate_studies(self, date_range, page_size, start_offset):
             offset = start_offset
             while True:
-                raw_records = query_fn(date_range, limit=page_size, offset=offset)
+                raw_records = self._client.query_studies(date_range, limit=page_size, offset=offset)
                 if not raw_records:
                     break
                 for raw in raw_records:
-                    record = parse_fn(raw)
-                    if fetch_files and table_name == "instances":
-                        record = self._attach_dicom_file(record, volume_path)
-                    yield record
+                    yield _parse_study(raw)
                 if len(raw_records) < page_size:
                     break
                 offset += page_size
 
-        def _attach_dicom_file(self, record: dict, volume_path: str) -> dict:
+        def _paginate_series(self, date_range, page_size, start_offset):
+            study_offset = start_offset
+            while True:
+                studies = self._client.query_studies(date_range, limit=page_size, offset=study_offset)
+                if not studies:
+                    break
+                for study_raw in studies:
+                    study = _parse_study(study_raw)
+                    study_uid = study.get("StudyInstanceUID")
+                    if not study_uid:
+                        continue
+                    for series_raw in self._client.query_series_for_study(study_uid):
+                        record = _parse_series(series_raw)
+                        if not record.get("StudyDate"):
+                            record["StudyDate"] = study.get("StudyDate")
+                        if not record.get("StudyInstanceUID"):
+                            record["StudyInstanceUID"] = study_uid
+                        yield record
+                if len(studies) < page_size:
+                    break
+                study_offset += page_size
+
+        def _paginate_instances(
+            self, date_range, page_size, start_offset, fetch_files, volume_path, fetch_metadata, wado_mode
+        ):
+            study_offset = start_offset
+            while True:
+                studies = self._client.query_studies(date_range, limit=page_size, offset=study_offset)
+                if not studies:
+                    break
+                for study_raw in studies:
+                    study = _parse_study(study_raw)
+                    study_uid = study.get("StudyInstanceUID")
+                    if not study_uid:
+                        continue
+                    for series_raw in self._client.query_series_for_study(study_uid):
+                        series = _parse_series(series_raw)
+                        series_uid = series.get("SeriesInstanceUID")
+                        if not series_uid:
+                            continue
+                        sop_to_meta = self._build_metadata_map(study_uid, series_uid) if fetch_metadata else {}
+                        for inst_raw in self._client.query_instances_for_series(study_uid, series_uid):
+                            record = _parse_instance(inst_raw)
+                            if not record.get("StudyDate"):
+                                record["StudyDate"] = study.get("StudyDate")
+                            if not record.get("StudyInstanceUID"):
+                                record["StudyInstanceUID"] = study_uid
+                            if not record.get("SeriesInstanceUID"):
+                                record["SeriesInstanceUID"] = series_uid
+                            if fetch_metadata:
+                                sop_uid = record.get("SOPInstanceUID")
+                                record["metadata"] = sop_to_meta.get(sop_uid) if sop_uid else None
+                            if fetch_files:
+                                record = self._attach_dicom_file(record, volume_path, wado_mode)
+                            yield record
+                if len(studies) < page_size:
+                    break
+                study_offset += page_size
+
+        def _resolve_wado_mode(self, wado_mode):
+            if wado_mode == _WADO_MODE_AUTO:
+                return self._wado_mode_detected or _WADO_MODE_FULL
+            return wado_mode
+
+        def _build_metadata_map(self, study_uid, series_uid):
+            try:
+                meta_list = self._client.retrieve_series_metadata(study_uid, series_uid)
+                sop_to_meta = {}
+                for meta_obj in meta_list:
+                    tag_obj = meta_obj.get("00080018")
+                    if tag_obj and tag_obj.get("Value"):
+                        sop_uid = str(tag_obj["Value"][0])
+                        sop_to_meta[sop_uid] = json.dumps(meta_obj)
+                return sop_to_meta
+            except Exception:
+                return {}
+
+        def _run_diagnostics_probe(self):
+            probe_timestamp = datetime.now(tz=timezone.utc).isoformat()
+            study_uid = series_uid = sop_uid = None
+            try:
+                studies = self._client.query_studies("19000101-99991231", limit=1, offset=0)
+                if studies:
+                    tag = studies[0].get("0020000D")
+                    study_uid = str(tag["Value"][0]) if tag and tag.get("Value") else None
+            except Exception:
+                pass
+            if study_uid:
+                try:
+                    sl = self._client.query_series_for_study(study_uid)
+                    if sl:
+                        tag = sl[0].get("0020000E")
+                        series_uid = str(tag["Value"][0]) if tag and tag.get("Value") else None
+                except Exception:
+                    pass
+            if study_uid and series_uid:
+                try:
+                    il = self._client.query_instances_for_series(study_uid, series_uid)
+                    if il:
+                        tag = il[0].get("00080018")
+                        sop_uid = str(tag["Value"][0]) if tag and tag.get("Value") else None
+                except Exception:
+                    pass
+
+            probes = [
+                ("/studies", "/studies?limit=1", "QIDO-RS", "Search studies (flat pagination)", None),
+                (
+                    "/studies/{uid}/series",
+                    f"/studies/{study_uid}/series" if study_uid else None,
+                    "QIDO-RS",
+                    "Search series for a study (hierarchical)",
+                    None,
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/instances",
+                    f"/studies/{study_uid}/series/{series_uid}/instances" if study_uid and series_uid else None,
+                    "QIDO-RS",
+                    "Search instances for a series (hierarchical)",
+                    None,
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/metadata",
+                    f"/studies/{study_uid}/series/{series_uid}/metadata" if study_uid and series_uid else None,
+                    "WADO-RS",
+                    "Series metadata — full DICOM JSON for all instances",
+                    "application/dicom+json",
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/instances/{uid}/metadata",
+                    f"/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/metadata"
+                    if study_uid and series_uid and sop_uid
+                    else None,
+                    "WADO-RS",
+                    "Instance metadata — full DICOM JSON for a single instance",
+                    "application/dicom+json",
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/instances/{uid}",
+                    f"/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}"
+                    if study_uid and series_uid and sop_uid
+                    else None,
+                    "WADO-RS",
+                    "Retrieve full DICOM instance (.dcm)",
+                    'multipart/related; type="application/dicom"',
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/instances/{uid}/frames/{n}",
+                    f"/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/frames/1"
+                    if study_uid and series_uid and sop_uid
+                    else None,
+                    "WADO-RS",
+                    "Retrieve pixel frame (image/jpeg or image/jls)",
+                    "image/jpeg, image/jls, application/octet-stream",
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/instances/{uid}/rendered",
+                    f"/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/rendered"
+                    if study_uid and series_uid and sop_uid
+                    else None,
+                    "WADO-RS",
+                    "Retrieve rendered instance (PNG/JPEG)",
+                    "image/jpeg, image/png",
+                ),
+                (
+                    "/studies/{uid}/series/{uid}/rendered",
+                    f"/studies/{study_uid}/series/{series_uid}/rendered" if study_uid and series_uid else None,
+                    "WADO-RS",
+                    "Retrieve rendered series",
+                    "image/jpeg, image/png",
+                ),
+                (
+                    "/studies/{uid}",
+                    f"/studies/{study_uid}" if study_uid else None,
+                    "WADO-RS",
+                    "Retrieve entire study (all instances, multipart/related)",
+                    'multipart/related; type="application/dicom"',
+                ),
+            ]
+
+            for endpoint_pattern, path, category, description, accept in probes:
+                if path is None:
+                    yield {
+                        "endpoint": endpoint_pattern,
+                        "category": category,
+                        "description": description,
+                        "supported": "unknown",
+                        "status_code": None,
+                        "content_type": None,
+                        "latency_ms": None,
+                        "notes": "Could not probe — no sample UID available from the server",
+                        "probe_timestamp": probe_timestamp,
+                    }
+                    continue
+                result = self._client.probe_endpoint(path, accept=accept)
+                status = result["status_code"]
+                if result["error"]:
+                    supported, notes = "error", result["error"]
+                elif status in (200, 204, 206):
+                    supported, notes = "yes", f"Content-Type: {result['content_type']}"
+                elif status == 400:
+                    supported, notes = "partial", "Bad Request (400) — endpoint exists but may require query parameters"
+                elif status == 403:
+                    supported, notes = "no", "Access Denied (403) — endpoint blocked by server or CDN policy"
+                elif status == 404:
+                    supported, notes = "no", "Not Found (404) — endpoint not implemented on this server"
+                elif status == 406:
+                    supported, notes = "no", "Not Acceptable (406) — requested media type not supported"
+                else:
+                    supported, notes = "no", f"HTTP {status}"
+                yield {
+                    "endpoint": endpoint_pattern,
+                    "category": category,
+                    "description": description,
+                    "supported": supported,
+                    "status_code": status,
+                    "content_type": result["content_type"],
+                    "latency_ms": result["latency_ms"],
+                    "notes": notes,
+                    "probe_timestamp": probe_timestamp,
+                }
+
+        def _attach_dicom_file(self, record: dict, volume_path: str, wado_mode: str) -> dict:
             study_uid = record.get("StudyInstanceUID")
             series_uid = record.get("SeriesInstanceUID")
             sop_uid = record.get("SOPInstanceUID")
             if not all([study_uid, series_uid, sop_uid]):
                 return record
-            dest_path = pathlib.Path(volume_path) / study_uid / series_uid / f"{sop_uid}.dcm"
             try:
-                dicom_bytes = self._client.retrieve_instance(study_uid, series_uid, sop_uid)
+                effective_mode = self._resolve_wado_mode(wado_mode)
+                if effective_mode == _WADO_MODE_FRAMES:
+                    file_bytes = self._client.retrieve_instance_frames(study_uid, series_uid, sop_uid)
+                    ext = ".jpg"
+                else:
+                    try:
+                        file_bytes = self._client.retrieve_instance(study_uid, series_uid, sop_uid)
+                        ext = ".dcm"
+                        if wado_mode == _WADO_MODE_AUTO and self._wado_mode_detected is None:
+                            self._wado_mode_detected = _WADO_MODE_FULL
+                    except Exception as exc:
+                        status = getattr(getattr(exc, "response", None), "status_code", None)
+                        if wado_mode == _WADO_MODE_AUTO and status in (404, 406, 415):
+                            self._wado_mode_detected = _WADO_MODE_FRAMES
+                            file_bytes = self._client.retrieve_instance_frames(study_uid, series_uid, sop_uid)
+                            ext = ".jpg"
+                        else:
+                            raise
+                dest_path = pathlib.Path(volume_path) / study_uid / series_uid / f"{sop_uid}{ext}"
                 try:
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
                 except OSError:
-                    # UC Volume FUSE mounts do not support mkdir via POSIX syscalls;
-                    # the write_bytes() call below works regardless.
                     pass
-                dest_path.write_bytes(dicom_bytes)
+                dest_path.write_bytes(file_bytes)
                 record["dicom_file_path"] = str(dest_path)
             except Exception as exc:
                 logging.getLogger(__name__).error("WADO-RS retrieval failed for %s: %s", sop_uid, exc)
@@ -525,6 +859,7 @@ def register_lakeflow_source(spark):
     FETCH_DICOM_FILES = "fetch_dicom_files"
     DICOM_VOLUME_PATH = "dicom_volume_path"
     MAX_CONCURRENT_REQUESTS = "max_concurrent_requests"
+    WADO_MODE = "wado_mode"
     _DEFAULT_MAX_CONCURRENT_REQUESTS = 16
 
     @dataclass
@@ -583,6 +918,7 @@ def register_lakeflow_source(spark):
             table = self.options.get(TABLE_NAME, "")
             fetch_files = self.options.get(FETCH_DICOM_FILES, "false").lower() == "true"
             volume_path = self.options.get(DICOM_VOLUME_PATH, "")
+            wado_mode = self.options.get(WADO_MODE, _WADO_MODE_AUTO).lower()
             max_concurrent = int(self.options.get(MAX_CONCURRENT_REQUESTS, _DEFAULT_MAX_CONCURRENT_REQUESTS))
 
             if table == "instances" and fetch_files:
@@ -597,8 +933,10 @@ def register_lakeflow_source(spark):
                     study_uid = record.get("StudyInstanceUID") or ""
                     series_uid = record.get("SeriesInstanceUID") or ""
                     sop_uid = record.get("SOPInstanceUID") or ""
+                    # Placeholder extension — worker will determine actual ext based on wado_mode
+                    ext = ".dcm" if wado_mode != _WADO_MODE_FRAMES else ".jpg"
                     dest = (
-                        str(pathlib.Path(volume_path) / study_uid / series_uid / f"{sop_uid}.dcm")
+                        str(pathlib.Path(volume_path) / study_uid / series_uid / f"{sop_uid}{ext}")
                         if volume_path and study_uid and series_uid and sop_uid
                         else ""
                     )
@@ -629,6 +967,7 @@ def register_lakeflow_source(spark):
             if isinstance(partition, DicomBatchPartition):
                 # Worker: download each file in the batch sequentially and yield rows.
                 instances = json.loads(partition.instances_json)
+                wado_mode = self.options.get(WADO_MODE, _WADO_MODE_AUTO).lower()
                 client = DICOMwebClient(
                     base_url=self.options.get("base_url", ""),
                     auth_type=self.options.get("auth_type", "none"),
@@ -636,20 +975,52 @@ def register_lakeflow_source(spark):
                     password=self.options.get("password"),
                     token=self.options.get("token"),
                 )
+                # Per-worker wado_mode detection cache
+                detected_mode = None
                 rows = []
                 for inst in instances:
                     record = inst["record"]
-                    dest_path = inst.get("dest_path", "")
-                    if dest_path and inst.get("study_uid"):
+                    if inst.get("study_uid") and inst.get("sop_uid"):
                         try:
-                            dcm_bytes = client.retrieve_instance(inst["study_uid"], inst["series_uid"], inst["sop_uid"])
-                            dest = pathlib.Path(dest_path)
+                            effective = detected_mode or (
+                                wado_mode if wado_mode != _WADO_MODE_AUTO else _WADO_MODE_FULL
+                            )
+                            if effective == _WADO_MODE_FRAMES:
+                                file_bytes = client.retrieve_instance_frames(
+                                    inst["study_uid"], inst["series_uid"], inst["sop_uid"]
+                                )
+                                ext = ".jpg"
+                            else:
+                                try:
+                                    file_bytes = client.retrieve_instance(
+                                        inst["study_uid"], inst["series_uid"], inst["sop_uid"]
+                                    )
+                                    ext = ".dcm"
+                                    if wado_mode == _WADO_MODE_AUTO and detected_mode is None:
+                                        detected_mode = _WADO_MODE_FULL
+                                except Exception as exc:
+                                    status = getattr(getattr(exc, "response", None), "status_code", None)
+                                    if wado_mode == _WADO_MODE_AUTO and status in (404, 406, 415):
+                                        detected_mode = _WADO_MODE_FRAMES
+                                        file_bytes = client.retrieve_instance_frames(
+                                            inst["study_uid"], inst["series_uid"], inst["sop_uid"]
+                                        )
+                                        ext = ".jpg"
+                                    else:
+                                        raise
+                            volume_path = self.options.get(DICOM_VOLUME_PATH, "")
+                            dest = (
+                                pathlib.Path(volume_path)
+                                / inst["study_uid"]
+                                / inst["series_uid"]
+                                / f"{inst['sop_uid']}{ext}"
+                            )
                             try:
                                 dest.parent.mkdir(parents=True, exist_ok=True)
                             except OSError:
                                 pass
-                            dest.write_bytes(dcm_bytes)
-                            record["dicom_file_path"] = dest_path
+                            dest.write_bytes(file_bytes)
+                            record["dicom_file_path"] = str(dest)
                         except Exception as exc:
                             logging.getLogger(__name__).error("WADO-RS failed for %s: %s", inst.get("sop_uid"), exc)
                             record["dicom_file_path"] = None

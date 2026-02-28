@@ -101,17 +101,32 @@ class TestQIDORS:
         assert result == []
 
     @rsps_lib.activate
-    def test_query_series_returns_records(self, series_response):
-        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/series", json=series_response, status=200)
+    def test_query_series_for_study_returns_records(self, series_response):
+        study_uid = "1.2.3"
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/studies/{study_uid}/series", json=series_response, status=200)
         client = DICOMwebClient(BASE_URL)
-        result = client.query_series("20231215-20231216")
+        result = client.query_series_for_study(study_uid)
         assert len(result) == 3
 
     @rsps_lib.activate
-    def test_query_instances_returns_records(self, instances_response):
-        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/instances", json=instances_response, status=200)
+    def test_query_series_for_study_204_returns_empty(self):
+        study_uid = "1.2.3"
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/studies/{study_uid}/series", status=204)
         client = DICOMwebClient(BASE_URL)
-        result = client.query_instances("20231215-20231216")
+        assert client.query_series_for_study(study_uid) == []
+
+    @rsps_lib.activate
+    def test_query_instances_for_series_returns_records(self, instances_response):
+        study_uid = "1.2.3"
+        series_uid = "1.2.3.4"
+        rsps_lib.add(
+            rsps_lib.GET,
+            f"{BASE_URL}/studies/{study_uid}/series/{series_uid}/instances",
+            json=instances_response,
+            status=200,
+        )
+        client = DICOMwebClient(BASE_URL)
+        result = client.query_instances_for_series(study_uid, series_uid)
         assert len(result) == 3
 
     @rsps_lib.activate
@@ -191,6 +206,69 @@ class TestWADORS:
         client = DICOMwebClient(BASE_URL)
         with pytest.raises(HTTPError):
             client.retrieve_instance("x", "y", "z")
+
+    @rsps_lib.activate
+    def test_retrieve_instance_frames(self):
+        study_uid = "1.2.3"
+        series_uid = "1.2.3.4"
+        sop_uid = "1.2.3.4.5"
+        fake_frame = b"\xff\xd8\xff\xe0JFIF"  # JPEG magic bytes
+        rsps_lib.add(
+            rsps_lib.GET,
+            f"{BASE_URL}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/frames/1",
+            body=fake_frame,
+            status=200,
+            content_type="image/jpeg",
+        )
+        client = DICOMwebClient(BASE_URL)
+        result = client.retrieve_instance_frames(study_uid, series_uid, sop_uid)
+        assert result == fake_frame
+
+    @rsps_lib.activate
+    def test_retrieve_instance_frames_multipart(self):
+        study_uid = "1.2.3"
+        series_uid = "1.2.3.4"
+        sop_uid = "1.2.3.4.5"
+        fake_frame = b"\xff\xd8\xff\xe0JFIF"
+        boundary = "frameboundary"
+        body = (
+            f"--{boundary}\r\nContent-Type: image/jpeg\r\n\r\n".encode()
+            + fake_frame
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
+        rsps_lib.add(
+            rsps_lib.GET,
+            f"{BASE_URL}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}/frames/1",
+            body=body,
+            status=200,
+            content_type=f'multipart/related; type="image/jpeg"; boundary="{boundary}"',
+        )
+        client = DICOMwebClient(BASE_URL)
+        result = client.retrieve_instance_frames(study_uid, series_uid, sop_uid)
+        assert result == fake_frame
+
+    @rsps_lib.activate
+    def test_retrieve_series_metadata(self, instances_response):
+        study_uid = "1.2.3"
+        series_uid = "1.2.3.4"
+        rsps_lib.add(
+            rsps_lib.GET,
+            f"{BASE_URL}/studies/{study_uid}/series/{series_uid}/metadata",
+            json=instances_response,
+            status=200,
+            content_type="application/dicom+json",
+        )
+        client = DICOMwebClient(BASE_URL)
+        result = client.retrieve_series_metadata(study_uid, series_uid)
+        assert len(result) == 3
+
+    @rsps_lib.activate
+    def test_retrieve_series_metadata_204_returns_empty(self):
+        study_uid = "1.2.3"
+        series_uid = "1.2.3.4"
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/studies/{study_uid}/series/{series_uid}/metadata", status=204)
+        client = DICOMwebClient(BASE_URL)
+        assert client.retrieve_series_metadata(study_uid, series_uid) == []
 
 
 # ---------------------------------------------------------------------------

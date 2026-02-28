@@ -21,11 +21,26 @@ A [Lakeflow Community Connector](https://github.com/databrickslabs/lakeflow-comm
 
 ## Supported Systems
 
-| System | Backend | Status |
-|--------|---------|--------|
-| Any DICOMweb-compliant server | `dicomweb` (default) | Phase 1 — available |
-| [Orthanc](https://www.orthanc-server.com/) | `orthanc` native API | Phase 2 — planned |
+| System | Notes | Status |
+|--------|-------|--------|
+| Any DICOMweb-compliant server (QIDO-RS / WADO-RS) | Hierarchical QIDO-RS endpoints | Available |
+| [Orthanc](https://www.orthanc-server.com/) | Via DICOMweb plugin | Available |
+| [AWS S3 Static WADO Server](https://github.com/RadiantHealth/s3-static-wado) | Auto-detected frame retrieval | Available |
 | [dcm4chee](https://www.dcm4che.org/) | `dcm4chee` + Keycloak OAuth2 | Phase 3 — planned |
+
+### AWS S3 Static WADO Server Compatibility
+
+The connector auto-detects S3 Static WADO Server endpoints, which use frame-based WADO-RS retrieval instead of full DICOM file downloads.
+
+**Endpoint pattern (S3 Static WADO):**
+```
+GET /studies?limit=101&offset=0&...                                      ← flat studies (same)
+GET /studies/{uid}/series?includefield=...                               ← hierarchical series
+GET /studies/{uid}/series/{uid}/metadata                                 ← WADO-RS instance metadata
+GET /studies/{uid}/series/{uid}/instances/{uid}/frames/1                 ← frame retrieval
+```
+
+Set `wado_mode=frames` to force frame retrieval, or leave it at the default `wado_mode=auto` to detect automatically on the first WADO-RS call.
 
 ---
 
@@ -75,17 +90,29 @@ for record in records_iter:
 
 ## Table Options (per-table in pipeline spec)
 
-> **Important:** every option listed below must be included in the `externalOptionsAllowList` value of your Unity Catalog connection, otherwise Lakeflow rejects it at runtime with *"Option X is not allowed by connection Y and cannot be provided externally."* Use the full allowlist value: `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests`
+> **Important:** every option listed below must be included in the `externalOptionsAllowList` value of your Unity Catalog connection, otherwise Lakeflow rejects it at runtime with *"Option X is not allowed by connection Y and cannot be provided externally."* Use the full allowlist value: `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests,fetch_metadata,wado_mode`
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `page_size` | `100` | Records per QIDO-RS request |
+| `page_size` | `100` | Records per QIDO-RS request (applies to study-level pagination) |
 | `lookback_days` | `1` | Days to subtract from cursor to catch late arrivals |
 | `start_date` | `19000101` | Initial cursor date (first run only) |
-| `fetch_dicom_files` | `false` | Also retrieve `.dcm` files via WADO-RS |
+| `fetch_dicom_files` | `false` | Also retrieve DICOM content via WADO-RS |
 | `dicom_volume_path` | — | Required when `fetch_dicom_files=true`; Unity Catalog Volume path |
+| `wado_mode` | `auto` | WADO-RS retrieval mode: `auto` (detect), `full` (`.dcm` file), `frames` (`.jpg` frame) |
+| `fetch_metadata` | `false` | Fetch full DICOM JSON metadata per instance via WADO-RS `/metadata`; stored in the `metadata` column |
 | `max_concurrent_requests` | `16` | Max simultaneous WADO-RS connections to the PACS. Instances are grouped into this many Spark tasks so the cluster never opens more than this many connections at once. Reduce for sensitive PACS systems. |
 | `download_threads` | `8` | Thread-level parallelism within a page when running outside Spark (standalone use). |
+
+### `wado_mode` details
+
+| Value | Endpoint used | Output file |
+|-------|---------------|-------------|
+| `auto` *(default)* | Tries full instance; falls back to frames on 404/406/415 | `.dcm` or `.jpg` |
+| `full` | `GET .../instances/{uid}` (multipart/related) | `.dcm` |
+| `frames` | `GET .../instances/{uid}/frames/1` (image/jpeg) | `.jpg` |
+
+Use `wado_mode=frames` explicitly for AWS S3 Static WADO Server to skip the auto-detection probe.
 
 ---
 
@@ -128,7 +155,46 @@ for record in records_iter:
 | `StudyDate` | string | 00080020 | Study date YYYYMMDD (cursor field) |
 | `ContentDate` | string | 00080023 | Content date YYYYMMDD |
 | `ContentTime` | string | 00080033 | Content time HHMMSS |
-| `dicom_file_path` | string (nullable) | — | Path to `.dcm` in Volume |
+| `dicom_file_path` | string (nullable) | — | Path to `.dcm` or `.jpg` in Volume |
+| `metadata` | variant/string (nullable) | — | Full DICOM JSON for this instance; populated when `fetch_metadata=true`. `VariantType` on DBR 15.x+, JSON string on older runtimes. |
+
+### `diagnostics`
+
+A special read-only table that probes your DICOMweb server on every pipeline trigger and reports which endpoints are reachable and what capabilities are supported. Useful for initial setup validation and ongoing health monitoring.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `endpoint` | string (PK) | URL path pattern probed, e.g. `/studies?limit=1` |
+| `category` | string | Service category: `QIDO-RS` or `WADO-RS` |
+| `description` | string | Human-readable description of the endpoint |
+| `supported` | string | `yes`, `no`, `partial`, `unknown`, or `error` |
+| `status_code` | int | HTTP status code returned (null on network error) |
+| `content_type` | string | Content-Type header from the response |
+| `latency_ms` | int | Round-trip latency in milliseconds |
+| `notes` | string | Additional context: error message, access-denied reason, etc. |
+| `probe_timestamp` | string (PK) | ISO-8601 UTC timestamp of this probe run |
+
+**Endpoint coverage:**
+
+| Endpoint | Category | What it tests |
+|----------|----------|---------------|
+| `GET /studies?limit=1` | QIDO-RS | Flat study query |
+| `GET /studies/{uid}/series` | QIDO-RS | Hierarchical series query |
+| `GET /studies/{uid}/series/{uid}/instances` | QIDO-RS | Hierarchical instances query |
+| `GET /series?limit=1` | QIDO-RS | Flat series query (optional — blocked on some servers) |
+| `GET /instances?limit=1` | QIDO-RS | Flat instances query (optional — blocked on some servers) |
+| `GET /studies/{uid}/series/{uid}/metadata` | WADO-RS | Series-level metadata |
+| `GET /studies/{uid}/series/{uid}/instances/{uid}/metadata` | WADO-RS | Instance-level metadata |
+| `GET /studies/{uid}/series/{uid}/instances/{uid}` | WADO-RS | Full DICOM file retrieval |
+| `GET /studies/{uid}/series/{uid}/instances/{uid}/frames/1` | WADO-RS | Frame retrieval (S3 Static WADO style) |
+| `GET /studies/{uid}/series/{uid}/instances/{uid}/rendered` | WADO-RS | Rendered image |
+
+**Example query (Databricks SQL):**
+```sql
+SELECT endpoint, supported, status_code, latency_ms, notes
+FROM my_catalog.my_schema.diagnostics
+ORDER BY category, endpoint;
+```
 
 ---
 
@@ -139,8 +205,24 @@ cursor = last StudyDate ingested (default: "19000101")
 each run:
     effective_start = cursor - lookback_days
     date_range = f"{effective_start}-{today}"
+
+    # studies — flat pagination
     QIDO-RS GET /studies?StudyDate={date_range}&limit={page_size}&offset={n}
-    → loop pages until empty
+
+    # series — hierarchical per study
+    for each study:
+        QIDO-RS GET /studies/{study_uid}/series
+
+    # instances — hierarchical per study → series
+    for each study:
+        for each series:
+            QIDO-RS GET /studies/{study_uid}/series/{series_uid}/instances
+            if fetch_metadata:
+                WADO-RS GET /studies/{study_uid}/series/{series_uid}/metadata
+            if fetch_dicom_files:
+                WADO-RS GET .../instances/{sop_uid}          (wado_mode=full)
+                WADO-RS GET .../instances/{sop_uid}/frames/1 (wado_mode=frames)
+
     → next cursor = today
 ```
 
