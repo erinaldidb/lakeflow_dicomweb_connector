@@ -308,8 +308,9 @@ class TestConnector:
         records = list(records_iter)
         # First record should have metadata populated (matches sop_uid from fixture)
         assert records[0]["metadata"] is not None
-        from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import METADATA_IS_VARIANT
         import json as _json
+
+        from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import METADATA_IS_VARIANT
 
         # On runtimes with VariantType metadata is a dict; on older runtimes a JSON string.
         meta = records[0]["metadata"]
