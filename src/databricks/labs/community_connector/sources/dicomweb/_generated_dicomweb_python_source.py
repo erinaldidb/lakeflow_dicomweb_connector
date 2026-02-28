@@ -6,7 +6,7 @@
 # ==============================================================================
 
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Iterator
@@ -16,7 +16,7 @@ import pathlib
 
 from requests.auth import HTTPBasicAuth
 from pyspark.sql import Row
-from pyspark.sql.datasource import DataSource, DataSourceReader, SimpleDataSourceStreamReader
+from pyspark.sql.datasource import DataSource, DataSourceReader, DataSourceStreamReader, InputPartition, SimpleDataSourceStreamReader
 from pyspark.sql.types import (
     ArrayType, BinaryType, BooleanType, ByteType, DataType, DateType,
     DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType,
@@ -439,15 +439,14 @@ def register_lakeflow_source(spark):
 
             fetch_files = table_options.get("fetch_dicom_files", "false").lower() == "true"
             volume_path = table_options.get("dicom_volume_path", "")
-            download_threads = int(table_options.get("download_threads", _DEFAULT_DOWNLOAD_THREADS))
             if fetch_files and not volume_path and table_name == "instances":
                 raise ValueError("fetch_dicom_files=true requires dicom_volume_path to be set")
 
-            records_iter = self._paginate(table_name, date_range, page_size, page_offset, fetch_files, volume_path, download_threads)
+            records_iter = self._paginate(table_name, date_range, page_size, page_offset, fetch_files, volume_path)
             next_offset = {"study_date": today_str, "page_offset": 0}
             return records_iter, next_offset
 
-        def _paginate(self, table_name, date_range, page_size, start_offset, fetch_files, volume_path, download_threads):
+        def _paginate(self, table_name, date_range, page_size, start_offset, fetch_files, volume_path):
             query_fn = {"studies": self._client.query_studies, "series": self._client.query_series, "instances": self._client.query_instances}[table_name]
             parse_fn = {"studies": _parse_study, "series": _parse_series, "instances": _parse_instance}[table_name]
             offset = start_offset
@@ -455,14 +454,11 @@ def register_lakeflow_source(spark):
                 raw_records = query_fn(date_range, limit=page_size, offset=offset)
                 if not raw_records:
                     break
-                records = [parse_fn(raw) for raw in raw_records]
-                if fetch_files and table_name == "instances":
-                    with ThreadPoolExecutor(max_workers=download_threads) as pool:
-                        records = list(pool.map(
-                            lambda r: self._attach_dicom_file(r, volume_path),
-                            records,
-                        ))
-                yield from records
+                for raw in raw_records:
+                    record = parse_fn(raw)
+                    if fetch_files and table_name == "instances":
+                        record = self._attach_dicom_file(record, volume_path)
+                    yield record
                 if len(raw_records) < page_size:
                     break
                 offset += page_size
@@ -499,6 +495,154 @@ def register_lakeflow_source(spark):
     TABLE_NAME_LIST = "tableNameList"
     TABLE_CONFIGS = "tableConfigs"
     IS_DELETE_FLOW = "isDeleteFlow"
+    FETCH_DICOM_FILES = "fetch_dicom_files"
+    DICOM_VOLUME_PATH = "dicom_volume_path"
+    MAX_CONCURRENT_REQUESTS = "max_concurrent_requests"
+    _DEFAULT_MAX_CONCURRENT_REQUESTS = 16
+
+    @dataclass
+    class SimplePartition(InputPartition):
+        """Single-partition descriptor for metadata-only tables."""
+        start_json: str
+
+    @dataclass
+    class DicomBatchPartition(InputPartition):
+        """
+        A batch of DICOM instances for one Spark task.
+
+        Grouping multiple instances per partition bounds the total number of
+        simultaneous Spark tasks (= concurrent WADO-RS connections to the PACS)
+        to max_concurrent_requests, regardless of cluster size.
+        Each worker downloads its batch sequentially.
+        """
+        instances_json: str  # JSON array of {record, dest_path, study_uid, series_uid, sop_uid}
+
+    class DicomStreamReader(DataSourceStreamReader):
+        """
+        Multi-partition streaming reader.
+
+        For instances + fetch_dicom_files=true:
+            partitions() runs on the driver — queries QIDO-RS, groups results
+            into at most max_concurrent_requests batches, and returns one
+            DicomBatchPartition per batch.  Spark schedules each batch as a
+            separate task on a worker node, so at most max_concurrent_requests
+            WADO-RS connections are open against the PACS simultaneously.
+            read(partition) runs on each worker — recreates the HTTP client
+            and downloads the files in its batch sequentially.
+
+        For all other cases:
+            Returns a single SimplePartition so all records are streamed on
+            one worker (same behaviour as SimpleDataSourceStreamReader).
+        """
+
+        def __init__(self, options, schema):
+            self.options = options
+            self.schema = schema
+
+        def _make_connector(self):
+            return DICOMwebLakeflowConnect(self.options)
+
+        def initialOffset(self):
+            return {}
+
+        def latestOffset(self):
+            return {"study_date": date.today().strftime("%Y%m%d"), "page_offset": 0}
+
+        def partitions(self, start, end):
+            import math
+            table = self.options.get(TABLE_NAME, "")
+            fetch_files = self.options.get(FETCH_DICOM_FILES, "false").lower() == "true"
+            volume_path = self.options.get(DICOM_VOLUME_PATH, "")
+            max_concurrent = int(self.options.get(MAX_CONCURRENT_REQUESTS, _DEFAULT_MAX_CONCURRENT_REQUESTS))
+
+            if table == "instances" and fetch_files:
+                # Driver: collect metadata without WADO-RS, then group instances
+                # into at most max_concurrent batches.
+                metadata_options = {**self.options, FETCH_DICOM_FILES: "false"}
+                connector = self._make_connector()
+                records, _ = connector.read_table(table, start or {}, metadata_options)
+
+                instances = []
+                for record in records:
+                    study_uid = record.get("StudyInstanceUID") or ""
+                    series_uid = record.get("SeriesInstanceUID") or ""
+                    sop_uid = record.get("SOPInstanceUID") or ""
+                    dest = (
+                        str(pathlib.Path(volume_path) / study_uid / series_uid / f"{sop_uid}.dcm")
+                        if volume_path and study_uid and series_uid and sop_uid
+                        else ""
+                    )
+                    instances.append({
+                        "record": record,
+                        "dest_path": dest,
+                        "study_uid": study_uid,
+                        "series_uid": series_uid,
+                        "sop_uid": sop_uid,
+                    })
+
+                if not instances:
+                    return []
+
+                # Divide into at most max_concurrent batches so the number of
+                # simultaneous Spark tasks (= simultaneous PACS connections) is
+                # bounded by max_concurrent_requests.
+                batch_size = max(1, math.ceil(len(instances) / max_concurrent))
+                batches = [
+                    instances[i: i + batch_size]
+                    for i in range(0, len(instances), batch_size)
+                ]
+                return [
+                    DicomBatchPartition(instances_json=json.dumps(batch, default=str))
+                    for batch in batches
+                ]
+            else:
+                # Single partition: stream all records on one worker.
+                return [SimplePartition(start_json=json.dumps(start or {}))]
+
+        def read(self, partition):
+            if isinstance(partition, DicomBatchPartition):
+                # Worker: download each file in the batch sequentially and yield rows.
+                instances = json.loads(partition.instances_json)
+                client = DICOMwebClient(
+                    base_url=self.options.get("base_url", ""),
+                    auth_type=self.options.get("auth_type", "none"),
+                    username=self.options.get("username"),
+                    password=self.options.get("password"),
+                    token=self.options.get("token"),
+                )
+                rows = []
+                for inst in instances:
+                    record = inst["record"]
+                    dest_path = inst.get("dest_path", "")
+                    if dest_path and inst.get("study_uid"):
+                        try:
+                            dcm_bytes = client.retrieve_instance(
+                                inst["study_uid"], inst["series_uid"], inst["sop_uid"]
+                            )
+                            dest = pathlib.Path(dest_path)
+                            try:
+                                dest.parent.mkdir(parents=True, exist_ok=True)
+                            except OSError:
+                                pass
+                            dest.write_bytes(dcm_bytes)
+                            record["dicom_file_path"] = dest_path
+                        except Exception as exc:
+                            logging.getLogger(__name__).error(
+                                "WADO-RS failed for %s: %s", inst.get("sop_uid"), exc
+                            )
+                            record["dicom_file_path"] = None
+                    rows.append(parse_value(record, self.schema))
+                return iter(rows)
+            else:
+                # Single partition: stream all records for the table.
+                start = json.loads(partition.start_json)
+                table_options = {k: v for k, v in self.options.items() if k != IS_DELETE_FLOW}
+                connector = self._make_connector()
+                records, _ = connector.read_table(self.options[TABLE_NAME], start, table_options)
+                return map(lambda x: parse_value(x, self.schema), records)
+
+        def commit(self, end):
+            pass
 
     class LakeflowStreamReader(SimpleDataSourceStreamReader):
         def __init__(self, options, schema, lakeflow_connect):
@@ -567,7 +711,7 @@ def register_lakeflow_source(spark):
         def reader(self, schema: StructType):
             return LakeflowBatchReader(self.options, schema, self.lakeflow_connect)
 
-        def simpleStreamReader(self, schema: StructType):
-            return LakeflowStreamReader(self.options, schema, self.lakeflow_connect)
+        def streamReader(self, schema: StructType):
+            return DicomStreamReader(self.options, schema)
 
     spark.dataSource.register(LakeflowSource)

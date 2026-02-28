@@ -295,7 +295,8 @@ ingest(spark, pipeline_spec)
 | `start_date` | No | `19000101` | Initial cursor date for the very first run (`YYYYMMDD`). Use a recent date (e.g., `20240101`) to avoid full-history scans. |
 | `fetch_dicom_files` | No | `false` | When `true`, retrieves each `.dcm` file via WADO-RS and writes it to `dicom_volume_path` |
 | `dicom_volume_path` | No | — | Required when `fetch_dicom_files=true`. Unity Catalog Volume path where `.dcm` files are written. |
-| `download_threads` | No | `8` | Number of concurrent WADO-RS download threads per page. Increase for high-bandwidth environments; decrease if the PACS rate-limits connections. Only active when `fetch_dicom_files=true`. |
+| `max_concurrent_requests` | No | `16` | Maximum number of simultaneous WADO-RS connections opened against the PACS per micro-batch. Instances are divided into this many Spark tasks; each task downloads its share sequentially. **Lower this value for PACS systems that rate-limit or have limited connection capacity.** Only active when `fetch_dicom_files=true`. |
+| `download_threads` | No | `8` | Thread-level parallelism per page when using the connector outside of Spark (standalone). Not used in the Lakeflow pipeline — use `max_concurrent_requests` instead. |
 
 ### Step 3: Run and Schedule the Pipeline
 

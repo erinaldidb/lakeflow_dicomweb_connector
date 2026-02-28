@@ -38,4 +38,4 @@ connection:
         Bearer token for token-based authentication.
         Required when auth_type is set to bearer.
 
-external_options_allowlist: "fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads"
+external_options_allowlist: "fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests"
