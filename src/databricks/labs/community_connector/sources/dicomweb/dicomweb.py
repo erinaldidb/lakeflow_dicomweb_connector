@@ -32,6 +32,7 @@ from typing import Iterator
 
 from pyspark.sql.types import StructType
 
+from databricks.labs.community_connector.interface.lakeflow_connect import LakeflowConnect
 from databricks.labs.community_connector.sources.dicomweb.dicomweb_client import DICOMwebClient
 from databricks.labs.community_connector.sources.dicomweb.dicomweb_parser import (
     parse_instance,
@@ -50,37 +51,6 @@ SUPPORTED_TABLES = ("studies", "series", "instances")
 DEFAULT_START_DATE = "19000101"  # Effectively "all history" on first run
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_LOOKBACK_DAYS = 1
-
-
-# ---------------------------------------------------------------------------
-# Base class shim
-# In the real lakeflow-community-connectors framework this would be imported
-# from databricks.labs.lakeflow.connect.  Defined here so the package is
-# usable standalone and in unit tests without the full Lakeflow SDK.
-# ---------------------------------------------------------------------------
-
-class LakeflowConnect:
-    """Minimal base class interface matching the Lakeflow connector contract."""
-
-    def __init__(self, options: dict[str, str]) -> None:
-        self.options = options
-
-    def list_tables(self) -> list[str]:
-        raise NotImplementedError
-
-    def get_table_schema(self, table_name: str, table_options: dict[str, str]) -> StructType:
-        raise NotImplementedError
-
-    def read_table_metadata(self, table_name: str, table_options: dict[str, str]) -> dict:
-        raise NotImplementedError
-
-    def read_table(
-        self,
-        table_name: str,
-        start_offset: dict,
-        table_options: dict[str, str],
-    ) -> tuple[Iterator[dict], dict]:
-        raise NotImplementedError
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +87,9 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
 
     def read_table_metadata(self, table_name: str, table_options: dict[str, str]) -> dict:
         return {
-            "primary_key": _primary_key(table_name),
+            "primary_keys": [_primary_key(table_name)],
             "cursor_field": "StudyDate",
+            "ingestion_type": "cdc",
         }
 
     # ------------------------------------------------------------------

@@ -152,8 +152,9 @@ class TestConnector:
     def test_read_table_metadata(self, dicomweb_options):
         connector = DICOMwebLakeflowConnect(dicomweb_options)
         meta = connector.read_table_metadata("studies", {})
-        assert meta["primary_key"] == "StudyInstanceUID"
+        assert meta["primary_keys"] == ["StudyInstanceUID"]
         assert meta["cursor_field"] == "StudyDate"
+        assert meta["ingestion_type"] == "cdc"
 
     def test_read_table_studies(self, dicomweb_options, studies_response):
         connector = DICOMwebLakeflowConnect(dicomweb_options)
