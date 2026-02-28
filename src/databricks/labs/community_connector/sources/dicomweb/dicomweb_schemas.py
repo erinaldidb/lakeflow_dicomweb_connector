@@ -43,6 +43,7 @@ SERIES_SCHEMA = StructType(
     [
         StructField("SeriesInstanceUID", StringType(), nullable=False),
         StructField("StudyInstanceUID", StringType(), nullable=True),
+        StructField("StudyDate", StringType(), nullable=True),
         StructField("SeriesNumber", IntegerType(), nullable=True),
         StructField("SeriesDescription", StringType(), nullable=True),
         StructField("Modality", StringType(), nullable=True),
@@ -63,6 +64,7 @@ INSTANCES_SCHEMA = StructType(
         StructField("StudyInstanceUID", StringType(), nullable=True),
         StructField("SOPClassUID", StringType(), nullable=True),
         StructField("InstanceNumber", IntegerType(), nullable=True),
+        StructField("StudyDate", StringType(), nullable=True),
         StructField("ContentDate", StringType(), nullable=True),
         StructField("ContentTime", StringType(), nullable=True),
         # Populated when fetch_dicom_files=true; path inside Unity Catalog Volume

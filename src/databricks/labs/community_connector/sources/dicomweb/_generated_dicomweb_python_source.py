@@ -176,6 +176,7 @@ def register_lakeflow_source(spark):
     SERIES_TAG_MAP = {
         "0020000E": "SeriesInstanceUID",
         "0020000D": "StudyInstanceUID",
+        "00080020": "StudyDate",
         "00200011": "SeriesNumber",
         "0008103E": "SeriesDescription",
         "00080060": "Modality",
@@ -189,6 +190,7 @@ def register_lakeflow_source(spark):
         "0020000D": "StudyInstanceUID",
         "00080016": "SOPClassUID",
         "00200013": "InstanceNumber",
+        "00080020": "StudyDate",
         "00080023": "ContentDate",
         "00080033": "ContentTime",
     }
@@ -257,6 +259,7 @@ def register_lakeflow_source(spark):
     SERIES_SCHEMA = StructType([
         StructField("SeriesInstanceUID",  StringType(),  nullable=False),
         StructField("StudyInstanceUID",   StringType(),  nullable=True),
+        StructField("StudyDate",          StringType(),  nullable=True),
         StructField("SeriesNumber",       IntegerType(), nullable=True),
         StructField("SeriesDescription",  StringType(),  nullable=True),
         StructField("Modality",           StringType(),  nullable=True),
@@ -270,6 +273,7 @@ def register_lakeflow_source(spark):
         StructField("StudyInstanceUID",  StringType(),  nullable=True),
         StructField("SOPClassUID",       StringType(),  nullable=True),
         StructField("InstanceNumber",    IntegerType(), nullable=True),
+        StructField("StudyDate",         StringType(),  nullable=True),
         StructField("ContentDate",       StringType(),  nullable=True),
         StructField("ContentTime",       StringType(),  nullable=True),
         StructField("dicom_file_path",   StringType(),  nullable=True),

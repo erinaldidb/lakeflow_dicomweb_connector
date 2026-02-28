@@ -33,6 +33,7 @@ STUDY_TAG_MAP: dict[str, str] = {
 SERIES_TAG_MAP: dict[str, str] = {
     "0020000E": "SeriesInstanceUID",
     "0020000D": "StudyInstanceUID",
+    "00080020": "StudyDate",
     "00200011": "SeriesNumber",
     "0008103E": "SeriesDescription",
     "00080060": "Modality",
@@ -46,6 +47,7 @@ INSTANCE_TAG_MAP: dict[str, str] = {
     "0020000D": "StudyInstanceUID",
     "00080016": "SOPClassUID",
     "00200013": "InstanceNumber",
+    "00080020": "StudyDate",
     "00080023": "ContentDate",
     "00080033": "ContentTime",
 }
