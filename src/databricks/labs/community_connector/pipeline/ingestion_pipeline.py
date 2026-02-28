@@ -145,8 +145,9 @@ def _get_table_metadata(spark, connection_name: str, table_list: list[str], tabl
             table_metadata["cursor_field"] = row["cursor_field"]
         if row["ingestion_type"] is not None:
             table_metadata["ingestion_type"] = row["ingestion_type"]
-        if row["column_expressions"] is not None:
-            table_metadata["column_expressions"] = dict(row["column_expressions"])
+        col_exprs = row.asDict().get("column_expressions")
+        if col_exprs is not None:
+            table_metadata["column_expressions"] = dict(col_exprs)
         metadata[row["tableName"]] = table_metadata
     return metadata
 
