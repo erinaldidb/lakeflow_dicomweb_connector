@@ -435,11 +435,11 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
 
     def _build_metadata_map(self, study_uid: str, series_uid: str) -> dict[str, str]:
         """
-        Fetch WADO-RS series metadata and return a {SOPInstanceUID: json_str} map.
+        Fetch WADO-RS series metadata and return a {SOPInstanceUID: value} map.
 
-        The JSON string contains the full DICOM JSON object for each instance and
-        is stored in the `metadata` column.  Returns an empty dict on error so
-        that the instance record is still yielded without metadata.
+        On DBR 15.x+ (METADATA_IS_VARIANT=True) values are VariantVal objects;
+        on older runtimes they are JSON strings.  Returns an empty dict on any
+        error so the instance record is still yielded without metadata.
         """
         try:
             meta_list = self._client.retrieve_series_metadata(study_uid, series_uid)
@@ -452,6 +452,9 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                     # handles dict → VARIANT binary encoding internally.
                     # StringType fallback: pass a JSON string for older runtimes.
                     if METADATA_IS_VARIANT:
+                        # convert_variant (pyspark/sql/conversion.py) ONLY accepts
+                        # None or a VariantVal — plain dicts/strings raise
+                        # MALFORMED_VARIANT.  parseJson builds the right type.
                         sop_to_meta[sop_uid] = _VariantVal.parseJson(json.dumps(meta_obj))
                     else:
                         sop_to_meta[sop_uid] = json.dumps(meta_obj)

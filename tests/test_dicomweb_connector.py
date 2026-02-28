@@ -317,6 +317,45 @@ class TestConnector:
         parsed = meta.toPython() if METADATA_IS_VARIANT else _json.loads(meta)
         assert "00080018" in parsed
 
+    def test_build_metadata_map_returns_variant_val(self, dicomweb_options):
+        """_build_metadata_map must return VariantVal on DBR 15.x+ (METADATA_IS_VARIANT=True).
+
+        Spark's convert_variant() only accepts None or a VariantVal — passing a
+        plain dict or JSON string raises MALFORMED_VARIANT in the executor.
+        """
+        import json as _json
+
+        from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import (
+            METADATA_IS_VARIANT,
+            _VariantVal,
+        )
+
+        connector = DICOMwebLakeflowConnect(dicomweb_options)
+        meta_obj = {
+            "00080018": {"vr": "UI", "Value": ["1.2.840.10008.1.2.3"]},
+            "00080020": {"vr": "DA", "Value": ["20231215"]},
+        }
+        connector._client.retrieve_series_metadata = MagicMock(return_value=[meta_obj])
+
+        result = connector._build_metadata_map("study-uid", "series-uid")
+        assert len(result) == 1
+        value = next(iter(result.values()))
+
+        if METADATA_IS_VARIANT:
+            # Must be a VariantVal so Spark's convert_variant can encode it
+            assert isinstance(value, _VariantVal), (
+                f"Expected VariantVal, got {type(value).__name__}. "
+                "Spark's convert_variant raises MALFORMED_VARIANT for other types."
+            )
+            # Verify round-trip: toPython() recovers the original keys
+            parsed = value.toPython()
+            assert "00080018" in parsed
+        else:
+            # Older runtimes: JSON string
+            assert isinstance(value, str)
+            parsed = _json.loads(value)
+            assert "00080018" in parsed
+
     def test_connection_name_explicit(self, studies_response):
         """Explicit connection_name option overrides the base_url default."""
         opts = {
