@@ -41,6 +41,4 @@ class LakeflowConnect(ABC):
     def read_table_deletes(
         self, table_name: str, start_offset: dict, table_options: dict[str, str]
     ) -> tuple[Iterator[dict], dict]:
-        raise NotImplementedError(
-            "read_table_deletes() must be implemented when ingestion_type is 'cdc_with_deletes'"
-        )
+        raise NotImplementedError("read_table_deletes() must be implemented when ingestion_type is 'cdc_with_deletes'")

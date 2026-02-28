@@ -27,6 +27,7 @@ def _load(name: str) -> list[dict]:
 # Construction & auth
 # ---------------------------------------------------------------------------
 
+
 class TestClientConstruction:
     def test_no_auth(self):
         client = DICOMwebClient(BASE_URL, auth_type="none")
@@ -61,6 +62,7 @@ class TestClientConstruction:
 # ---------------------------------------------------------------------------
 # QIDO-RS queries
 # ---------------------------------------------------------------------------
+
 
 class TestQIDORS:
     @rsps_lib.activate
@@ -139,6 +141,7 @@ class TestQIDORS:
 
 FAKE_DCM = b"DICM" + b"\x00" * 128  # minimal fake DICOM preamble
 
+
 class TestWADORS:
     @rsps_lib.activate
     def test_retrieve_instance_raw(self):
@@ -163,9 +166,10 @@ class TestWADORS:
         sop_uid = "1.2.3.4.5"
         boundary = "myboundary"
         body = (
-            f"--{boundary}\r\n"
-            f"Content-Type: application/dicom\r\n\r\n"
-        ).encode() + FAKE_DCM + f"\r\n--{boundary}--\r\n".encode()
+            (f"--{boundary}\r\nContent-Type: application/dicom\r\n\r\n").encode()
+            + FAKE_DCM
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
         rsps_lib.add(
             rsps_lib.GET,
             f"{BASE_URL}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}",
@@ -192,6 +196,7 @@ class TestWADORS:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class TestHelpers:
     def test_parse_boundary(self):

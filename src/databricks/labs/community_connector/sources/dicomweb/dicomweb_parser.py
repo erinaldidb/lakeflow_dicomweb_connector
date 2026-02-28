@@ -64,6 +64,7 @@ _MULTI_STRING_VRS = {"CS"}  # ModalitiesInStudy uses CS and can be multi-valued
 # Low-level value extraction
 # ---------------------------------------------------------------------------
 
+
 def _extract_value(tag_obj: dict, field_name: str) -> object:
     """Extract a Python value from a DICOM JSON tag object."""
     vr = tag_obj.get("vr", "")
@@ -104,6 +105,7 @@ def _extract_value(tag_obj: dict, field_name: str) -> object:
 # ---------------------------------------------------------------------------
 # Public parse functions
 # ---------------------------------------------------------------------------
+
 
 def parse_dicom_json(dicom_obj: dict, tag_map: dict[str, str]) -> dict:
     """

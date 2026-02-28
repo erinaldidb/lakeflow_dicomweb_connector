@@ -33,3 +33,18 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",   # line too long — enforced by formatter, not linter
+    "F401",   # unused imports in __init__.py re-exports
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"*/_generated_*" = ["E501", "F811"]  # generated file has intentional re-definitions

@@ -3,12 +3,12 @@
 import importlib
 from types import ModuleType
 from typing import Type, Union
+
 from pyspark.sql import SparkSession
 from pyspark.sql.datasource import DataSource
 
 from databricks.labs.community_connector.interface import LakeflowConnect
 from databricks.labs.community_connector.sparkpds.lakeflow_datasource import LakeflowSource
-
 
 _BASE_PKG = "databricks.labs.community_connector.sources"
 
@@ -45,9 +45,7 @@ def _get_register_function(source_name: str):
     module_name = f"_generated_{source_name}_python_source"
     module = _get_source_module(source_name, module_name)
     if not hasattr(module, "register_lakeflow_source"):
-        raise ImportError(
-            f"Module '{module_name}' does not have a 'register_lakeflow_source' function."
-        )
+        raise ImportError(f"Module '{module_name}' does not have a 'register_lakeflow_source' function.")
     return module.register_lakeflow_source
 
 
@@ -77,6 +75,4 @@ def register(
         spark.dataSource.register(RegisterableLakeflowSource)
         return
 
-    raise TypeError(
-        f"source must be a string, DataSource subclass, or LakeflowConnect subclass, got {type(source)}"
-    )
+    raise TypeError(f"source must be a string, DataSource subclass, or LakeflowConnect subclass, got {type(source)}")

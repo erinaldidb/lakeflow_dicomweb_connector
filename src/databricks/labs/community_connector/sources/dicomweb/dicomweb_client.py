@@ -139,10 +139,7 @@ class DICOMwebClient:
         Returns:
             Raw bytes of the .dcm file (multipart/related — first part extracted).
         """
-        url = (
-            f"{self.base_url}/studies/{study_uid}"
-            f"/series/{series_uid}/instances/{sop_uid}"
-        )
+        url = f"{self.base_url}/studies/{study_uid}/series/{series_uid}/instances/{sop_uid}"
         logger.debug("WADO-RS GET %s", url)
         resp = self._session.get(
             url,
@@ -161,6 +158,7 @@ class DICOMwebClient:
 # ---------------------------------------------------------------------------
 # Multipart helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_first_multipart_part(body: bytes, content_type: str) -> bytes:
     """
@@ -194,6 +192,6 @@ def _parse_boundary(content_type: str) -> str | None:
     for segment in content_type.split(";"):
         segment = segment.strip()
         if segment.lower().startswith("boundary="):
-            boundary = segment[len("boundary="):].strip().strip('"')
+            boundary = segment[len("boundary=") :].strip().strip('"')
             return boundary
     return None

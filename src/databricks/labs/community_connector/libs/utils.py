@@ -1,26 +1,26 @@
 """Utility functions for data type conversion and parsing."""
 
 import base64
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from pyspark.sql import Row
 from pyspark.sql.types import (
-    DataType,
-    StructType,
     ArrayType,
-    MapType,
-    StringType,
+    BinaryType,
+    BooleanType,
+    DataType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FloatType,
     IntegerType,
     LongType,
-    FloatType,
-    DoubleType,
-    DecimalType,
-    BooleanType,
-    DateType,
+    MapType,
+    StringType,
+    StructType,
     TimestampType,
-    BinaryType,
 )
 
 
@@ -29,8 +29,7 @@ def _parse_struct(value: Any, field_type: StructType) -> Row:
         raise ValueError(f"Expected a dictionary for StructType, got {type(value)}")
     if value == {}:
         raise ValueError(
-            "field in StructType cannot be an empty dict. "
-            "Please assign None as the default value instead."
+            "field in StructType cannot be an empty dict. Please assign None as the default value instead."
         )
     field_dict = {}
     for field in field_type.fields:
@@ -54,10 +53,7 @@ def _parse_array(value: Any, field_type: ArrayType) -> list:
 def _parse_map(value: Any, field_type: MapType) -> dict:
     if not isinstance(value, dict):
         raise ValueError(f"Expected a dictionary for MapType, got {type(value)}")
-    return {
-        parse_value(k, field_type.keyType): parse_value(v, field_type.valueType)
-        for k, v in value.items()
-    }
+    return {parse_value(k, field_type.keyType): parse_value(v, field_type.valueType) for k, v in value.items()}
 
 
 def _parse_string(value: Any) -> str:

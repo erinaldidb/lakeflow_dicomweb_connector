@@ -1,11 +1,13 @@
-from typing import Iterator
 import json
-from pyspark.sql.types import *
+from typing import Iterator
+
 from pyspark.sql.datasource import (
     DataSource,
-    SimpleDataSourceStreamReader,
     DataSourceReader,
+    SimpleDataSourceStreamReader,
 )
+from pyspark.sql.types import ArrayType, StringType, StructField, StructType
+
 from databricks.labs.community_connector.interface import LakeflowConnect
 from databricks.labs.community_connector.libs.utils import parse_value
 
@@ -78,12 +80,14 @@ class LakeflowSource(DataSource):
     def schema(self):
         table = self.options[TABLE_NAME]
         if table == METADATA_TABLE:
-            return StructType([
-                StructField(TABLE_NAME,       StringType(),            False),
-                StructField("primary_keys",   ArrayType(StringType()), True),
-                StructField("cursor_field",   StringType(),            True),
-                StructField("ingestion_type", StringType(),            True),
-            ])
+            return StructType(
+                [
+                    StructField(TABLE_NAME, StringType(), False),
+                    StructField("primary_keys", ArrayType(StringType()), True),
+                    StructField("cursor_field", StringType(), True),
+                    StructField("ingestion_type", StringType(), True),
+                ]
+            )
         return self.lakeflow_connect.get_table_schema(table, self.options)
 
     def reader(self, schema: StructType):

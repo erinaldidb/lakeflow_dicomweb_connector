@@ -5,24 +5,44 @@
 # Do not edit manually. Make changes to the source files instead.
 # ==============================================================================
 
+import json
+import logging
+import pathlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Iterator
-import json
-import logging
-import pathlib
 
-from requests.auth import HTTPBasicAuth
-from pyspark.sql import Row
-from pyspark.sql.datasource import DataSource, DataSourceReader, DataSourceStreamReader, InputPartition, SimpleDataSourceStreamReader
-from pyspark.sql.types import (
-    ArrayType, BinaryType, BooleanType, ByteType, DataType, DateType,
-    DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType,
-    ShortType, StringType, StructField, StructType, TimestampType,
-)
 import requests
+from pyspark.sql import Row
+from pyspark.sql.datasource import (
+    DataSource,
+    DataSourceReader,
+    DataSourceStreamReader,
+    InputPartition,
+    SimpleDataSourceStreamReader,
+)
+from pyspark.sql.types import (
+    ArrayType,
+    BinaryType,
+    BooleanType,
+    ByteType,
+    DataType,
+    DateType,
+    DecimalType,
+    DoubleType,
+    FloatType,
+    IntegerType,
+    LongType,
+    MapType,
+    ShortType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
+from requests.auth import HTTPBasicAuth
 
 
 def register_lakeflow_source(spark):
@@ -37,8 +57,7 @@ def register_lakeflow_source(spark):
             raise ValueError(f"Expected a dictionary for StructType, got {type(value)}")
         if value == {}:
             raise ValueError(
-                "field in StructType cannot be an empty dict. "
-                "Please assign None as the default value instead."
+                "field in StructType cannot be an empty dict. Please assign None as the default value instead."
             )
         field_dict = {}
         for field in field_type.fields:
@@ -60,10 +79,7 @@ def register_lakeflow_source(spark):
     def _parse_map(value: Any, field_type: MapType) -> dict:
         if not isinstance(value, dict):
             raise ValueError(f"Expected a dictionary for MapType, got {type(value)}")
-        return {
-            parse_value(k, field_type.keyType): parse_value(v, field_type.valueType)
-            for k, v in value.items()
-        }
+        return {parse_value(k, field_type.keyType): parse_value(v, field_type.valueType) for k, v in value.items()}
 
     def _parse_string(value: Any) -> str:
         return str(value)
@@ -97,6 +113,7 @@ def register_lakeflow_source(spark):
             return bytes(value)
         if isinstance(value, str):
             import base64
+
             try:
                 return base64.b64decode(value)
             except Exception:
@@ -244,45 +261,51 @@ def register_lakeflow_source(spark):
     # sources/dicomweb/dicomweb_schemas.py
     ########################################################
 
-    STUDIES_SCHEMA = StructType([
-        StructField("StudyInstanceUID",              StringType(),           nullable=False),
-        StructField("PatientID",                     StringType(),           nullable=True),
-        StructField("PatientName",                   StringType(),           nullable=True),
-        StructField("StudyDate",                     StringType(),           nullable=True),
-        StructField("StudyTime",                     StringType(),           nullable=True),
-        StructField("AccessionNumber",               StringType(),           nullable=True),
-        StructField("StudyDescription",              StringType(),           nullable=True),
-        StructField("ModalitiesInStudy",             ArrayType(StringType()), nullable=True),
-        StructField("NumberOfStudyRelatedSeries",    IntegerType(),          nullable=True),
-        StructField("NumberOfStudyRelatedInstances", IntegerType(),          nullable=True),
-    ])
+    STUDIES_SCHEMA = StructType(
+        [
+            StructField("StudyInstanceUID", StringType(), nullable=False),
+            StructField("PatientID", StringType(), nullable=True),
+            StructField("PatientName", StringType(), nullable=True),
+            StructField("StudyDate", StringType(), nullable=True),
+            StructField("StudyTime", StringType(), nullable=True),
+            StructField("AccessionNumber", StringType(), nullable=True),
+            StructField("StudyDescription", StringType(), nullable=True),
+            StructField("ModalitiesInStudy", ArrayType(StringType()), nullable=True),
+            StructField("NumberOfStudyRelatedSeries", IntegerType(), nullable=True),
+            StructField("NumberOfStudyRelatedInstances", IntegerType(), nullable=True),
+        ]
+    )
 
-    SERIES_SCHEMA = StructType([
-        StructField("SeriesInstanceUID",  StringType(),  nullable=False),
-        StructField("StudyInstanceUID",   StringType(),  nullable=True),
-        StructField("StudyDate",          StringType(),  nullable=True),
-        StructField("SeriesNumber",       IntegerType(), nullable=True),
-        StructField("SeriesDescription",  StringType(),  nullable=True),
-        StructField("Modality",           StringType(),  nullable=True),
-        StructField("BodyPartExamined",   StringType(),  nullable=True),
-        StructField("SeriesDate",         StringType(),  nullable=True),
-    ])
+    SERIES_SCHEMA = StructType(
+        [
+            StructField("SeriesInstanceUID", StringType(), nullable=False),
+            StructField("StudyInstanceUID", StringType(), nullable=True),
+            StructField("StudyDate", StringType(), nullable=True),
+            StructField("SeriesNumber", IntegerType(), nullable=True),
+            StructField("SeriesDescription", StringType(), nullable=True),
+            StructField("Modality", StringType(), nullable=True),
+            StructField("BodyPartExamined", StringType(), nullable=True),
+            StructField("SeriesDate", StringType(), nullable=True),
+        ]
+    )
 
-    INSTANCES_SCHEMA = StructType([
-        StructField("SOPInstanceUID",    StringType(),  nullable=False),
-        StructField("SeriesInstanceUID", StringType(),  nullable=True),
-        StructField("StudyInstanceUID",  StringType(),  nullable=True),
-        StructField("SOPClassUID",       StringType(),  nullable=True),
-        StructField("InstanceNumber",    IntegerType(), nullable=True),
-        StructField("StudyDate",         StringType(),  nullable=True),
-        StructField("ContentDate",       StringType(),  nullable=True),
-        StructField("ContentTime",       StringType(),  nullable=True),
-        StructField("dicom_file_path",   StringType(),  nullable=True),
-    ])
+    INSTANCES_SCHEMA = StructType(
+        [
+            StructField("SOPInstanceUID", StringType(), nullable=False),
+            StructField("SeriesInstanceUID", StringType(), nullable=True),
+            StructField("StudyInstanceUID", StringType(), nullable=True),
+            StructField("SOPClassUID", StringType(), nullable=True),
+            StructField("InstanceNumber", IntegerType(), nullable=True),
+            StructField("StudyDate", StringType(), nullable=True),
+            StructField("ContentDate", StringType(), nullable=True),
+            StructField("ContentTime", StringType(), nullable=True),
+            StructField("dicom_file_path", StringType(), nullable=True),
+        ]
+    )
 
     _TABLE_SCHEMAS = {
-        "studies":   STUDIES_SCHEMA,
-        "series":    SERIES_SCHEMA,
+        "studies": STUDIES_SCHEMA,
+        "series": SERIES_SCHEMA,
         "instances": INSTANCES_SCHEMA,
     }
 
@@ -354,7 +377,7 @@ def register_lakeflow_source(spark):
         for segment in content_type.split(";"):
             segment = segment.strip()
             if segment.lower().startswith("boundary="):
-                return segment[len("boundary="):].strip().strip('"')
+                return segment[len("boundary=") :].strip().strip('"')
         return None
 
     def _extract_first_multipart_part(body: bytes, content_type: str) -> bytes:
@@ -416,8 +439,8 @@ def register_lakeflow_source(spark):
 
         def read_table_metadata(self, table_name: str, table_options: dict[str, str]) -> dict:
             pk_map = {
-                "studies":   "StudyInstanceUID",
-                "series":    "SeriesInstanceUID",
+                "studies": "StudyInstanceUID",
+                "series": "SeriesInstanceUID",
                 "instances": "SOPInstanceUID",
             }
             return {"primary_keys": [pk_map[table_name]], "cursor_field": "StudyDate", "ingestion_type": "cdc"}
@@ -447,7 +470,11 @@ def register_lakeflow_source(spark):
             return records_iter, next_offset
 
         def _paginate(self, table_name, date_range, page_size, start_offset, fetch_files, volume_path):
-            query_fn = {"studies": self._client.query_studies, "series": self._client.query_series, "instances": self._client.query_instances}[table_name]
+            query_fn = {
+                "studies": self._client.query_studies,
+                "series": self._client.query_series,
+                "instances": self._client.query_instances,
+            }[table_name]
             parse_fn = {"studies": _parse_study, "series": _parse_series, "instances": _parse_instance}[table_name]
             offset = start_offset
             while True:
@@ -503,6 +530,7 @@ def register_lakeflow_source(spark):
     @dataclass
     class SimplePartition(InputPartition):
         """Single-partition descriptor for metadata-only tables."""
+
         start_json: str
 
     @dataclass
@@ -515,6 +543,7 @@ def register_lakeflow_source(spark):
         to max_concurrent_requests, regardless of cluster size.
         Each worker downloads its batch sequentially.
         """
+
         instances_json: str  # JSON array of {record, dest_path, study_uid, series_uid, sop_uid}
 
     class DicomStreamReader(DataSourceStreamReader):
@@ -550,6 +579,7 @@ def register_lakeflow_source(spark):
 
         def partitions(self, start, end):
             import math
+
             table = self.options.get(TABLE_NAME, "")
             fetch_files = self.options.get(FETCH_DICOM_FILES, "false").lower() == "true"
             volume_path = self.options.get(DICOM_VOLUME_PATH, "")
@@ -572,13 +602,15 @@ def register_lakeflow_source(spark):
                         if volume_path and study_uid and series_uid and sop_uid
                         else ""
                     )
-                    instances.append({
-                        "record": record,
-                        "dest_path": dest,
-                        "study_uid": study_uid,
-                        "series_uid": series_uid,
-                        "sop_uid": sop_uid,
-                    })
+                    instances.append(
+                        {
+                            "record": record,
+                            "dest_path": dest,
+                            "study_uid": study_uid,
+                            "series_uid": series_uid,
+                            "sop_uid": sop_uid,
+                        }
+                    )
 
                 if not instances:
                     return []
@@ -587,14 +619,8 @@ def register_lakeflow_source(spark):
                 # simultaneous Spark tasks (= simultaneous PACS connections) is
                 # bounded by max_concurrent_requests.
                 batch_size = max(1, math.ceil(len(instances) / max_concurrent))
-                batches = [
-                    instances[i: i + batch_size]
-                    for i in range(0, len(instances), batch_size)
-                ]
-                return [
-                    DicomBatchPartition(instances_json=json.dumps(batch, default=str))
-                    for batch in batches
-                ]
+                batches = [instances[i : i + batch_size] for i in range(0, len(instances), batch_size)]
+                return [DicomBatchPartition(instances_json=json.dumps(batch, default=str)) for batch in batches]
             else:
                 # Single partition: stream all records on one worker.
                 return [SimplePartition(start_json=json.dumps(start or {}))]
@@ -616,9 +642,7 @@ def register_lakeflow_source(spark):
                     dest_path = inst.get("dest_path", "")
                     if dest_path and inst.get("study_uid"):
                         try:
-                            dcm_bytes = client.retrieve_instance(
-                                inst["study_uid"], inst["series_uid"], inst["sop_uid"]
-                            )
+                            dcm_bytes = client.retrieve_instance(inst["study_uid"], inst["series_uid"], inst["sop_uid"])
                             dest = pathlib.Path(dest_path)
                             try:
                                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -627,9 +651,7 @@ def register_lakeflow_source(spark):
                             dest.write_bytes(dcm_bytes)
                             record["dicom_file_path"] = dest_path
                         except Exception as exc:
-                            logging.getLogger(__name__).error(
-                                "WADO-RS failed for %s: %s", inst.get("sop_uid"), exc
-                            )
+                            logging.getLogger(__name__).error("WADO-RS failed for %s: %s", inst.get("sop_uid"), exc)
                             record["dicom_file_path"] = None
                     rows.append(parse_value(record, self.schema))
                 return iter(rows)
@@ -657,7 +679,9 @@ def register_lakeflow_source(spark):
             is_delete_flow = self.options.get(IS_DELETE_FLOW) == "true"
             table_options = {k: v for k, v in self.options.items() if k != IS_DELETE_FLOW}
             if is_delete_flow:
-                records, offset = self.lakeflow_connect.read_table_deletes(self.options[TABLE_NAME], start, table_options)
+                records, offset = self.lakeflow_connect.read_table_deletes(
+                    self.options[TABLE_NAME], start, table_options
+                )
             else:
                 records, offset = self.lakeflow_connect.read_table(self.options[TABLE_NAME], start, table_options)
             rows = map(lambda x: parse_value(x, self.schema), records)
@@ -700,12 +724,14 @@ def register_lakeflow_source(spark):
         def schema(self):
             table = self.options[TABLE_NAME]
             if table == METADATA_TABLE:
-                return StructType([
-                    StructField(TABLE_NAME,      StringType(),            False),
-                    StructField("primary_keys",  ArrayType(StringType()), True),
-                    StructField("cursor_field",  StringType(),            True),
-                    StructField("ingestion_type", StringType(),           True),
-                ])
+                return StructType(
+                    [
+                        StructField(TABLE_NAME, StringType(), False),
+                        StructField("primary_keys", ArrayType(StringType()), True),
+                        StructField("cursor_field", StringType(), True),
+                        StructField("ingestion_type", StringType(), True),
+                    ]
+                )
             return self.lakeflow_connect.get_table_schema(table, self.options)
 
         def reader(self, schema: StructType):

@@ -59,6 +59,7 @@ DEFAULT_DOWNLOAD_THREADS = 8
 # Main connector
 # ---------------------------------------------------------------------------
 
+
 class DICOMwebLakeflowConnect(LakeflowConnect):
     """Lakeflow connector for DICOMweb VNA/PACS systems."""
 
@@ -129,7 +130,10 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
 
         logger.info(
             "read_table table=%s date_range=%s page_offset=%d page_size=%d",
-            table_name, date_range, page_offset, page_size,
+            table_name,
+            date_range,
+            page_offset,
+            page_size,
         )
 
         fetch_files = table_options.get("fetch_dicom_files", "false").lower() == "true"
@@ -137,9 +141,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
         download_threads = int(table_options.get("download_threads", DEFAULT_DOWNLOAD_THREADS))
 
         if fetch_files and not volume_path and table_name == "instances":
-            raise ValueError(
-                "fetch_dicom_files=true requires dicom_volume_path to be set"
-            )
+            raise ValueError("fetch_dicom_files=true requires dicom_volume_path to be set")
 
         records_iter = self._paginate(
             table_name=table_name,
@@ -181,10 +183,12 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
 
             if fetch_files and table_name == "instances":
                 with ThreadPoolExecutor(max_workers=download_threads) as pool:
-                    records = list(pool.map(
-                        lambda r: self._attach_dicom_file(r, volume_path),
-                        records,
-                    ))
+                    records = list(
+                        pool.map(
+                            lambda r: self._attach_dicom_file(r, volume_path),
+                            records,
+                        )
+                    )
 
             yield from records
 
@@ -226,6 +230,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _primary_key(table_name: str) -> str:
     pk_map = {

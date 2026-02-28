@@ -1,0 +1,33 @@
+name: Lint
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint:
+    name: Code quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install linting tools
+        run: pip install ruff pylint -e ".[dev]"
+
+      - name: ruff — format check
+        run: ruff format --check src/ tests/
+
+      - name: ruff — lint
+        run: ruff check src/ tests/
+
+      - name: pylint
+        run: pylint src/databricks/labs/community_connector/sources/dicomweb/ --disable=C0114,C0115,C0116

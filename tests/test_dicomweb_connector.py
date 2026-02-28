@@ -5,29 +5,30 @@ HTTP calls are mocked via unittest.mock.patch.
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from databricks.labs.community_connector.sources.dicomweb.dicomweb import (
     DICOMwebLakeflowConnect,
     _subtract_days,
 )
 from databricks.labs.community_connector.sources.dicomweb.dicomweb_parser import (
-    parse_study,
-    parse_series,
     parse_instance,
+    parse_series,
+    parse_study,
 )
 from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import (
-    get_schema,
-    STUDIES_SCHEMA,
-    SERIES_SCHEMA,
     INSTANCES_SCHEMA,
+    SERIES_SCHEMA,
+    STUDIES_SCHEMA,
+    get_schema,
 )
-
 
 # ---------------------------------------------------------------------------
 # Parser tests
 # ---------------------------------------------------------------------------
+
 
 class TestParser:
     def test_parse_study_full(self, studies_response):
@@ -93,6 +94,7 @@ class TestParser:
 # Schema tests
 # ---------------------------------------------------------------------------
 
+
 class TestSchemas:
     def test_get_schema_studies(self):
         schema = get_schema("studies")
@@ -129,6 +131,7 @@ class TestSchemas:
 # Connector tests
 # ---------------------------------------------------------------------------
 
+
 class TestConnector:
     def test_missing_base_url_raises(self):
         with pytest.raises(ValueError, match="base_url"):
@@ -159,9 +162,7 @@ class TestConnector:
     def test_read_table_studies(self, dicomweb_options, studies_response):
         connector = DICOMwebLakeflowConnect(dicomweb_options)
         # First call returns data, second returns empty (pagination end)
-        connector._client.query_studies = MagicMock(
-            side_effect=[studies_response, []]
-        )
+        connector._client.query_studies = MagicMock(side_effect=[studies_response, []])
         records_iter, next_offset = connector.read_table("studies", {}, {})
         records = list(records_iter)
         assert len(records) == 2
@@ -220,6 +221,7 @@ class TestConnector:
     def test_read_table_instances_fetch_files_parallel(self, dicomweb_options, instances_response, tmp_path):
         """download_threads > 1 should issue all retrieve_instance calls concurrently."""
         import threading
+
         connector = DICOMwebLakeflowConnect(dicomweb_options)
         connector._client.query_instances = MagicMock(side_effect=[instances_response, []])
 
@@ -249,9 +251,7 @@ class TestConnector:
         connector = DICOMwebLakeflowConnect(dicomweb_options)
         # Simulate: page1 (full, size=2), page2 (full, size=2), page3 (empty)
         connector._client.query_studies = MagicMock(side_effect=[page1, page1, []])
-        records_iter, _ = connector.read_table(
-            "studies", {}, {"page_size": "2"}
-        )
+        records_iter, _ = connector.read_table("studies", {}, {"page_size": "2"})
         records = list(records_iter)
         assert len(records) == 4  # 2 + 2 pages
 
@@ -277,6 +277,7 @@ class TestConnector:
 # Utility tests
 # ---------------------------------------------------------------------------
 
+
 class TestUtilities:
     def test_subtract_days_normal(self):
         assert _subtract_days("20231215", 5) == "20231210"
@@ -286,6 +287,7 @@ class TestUtilities:
 
     def test_subtract_days_default_start(self):
         from databricks.labs.community_connector.sources.dicomweb.dicomweb import DEFAULT_START_DATE
+
         assert _subtract_days(DEFAULT_START_DATE, 10) == DEFAULT_START_DATE
 
     def test_subtract_days_cross_month(self):
