@@ -1,8 +1,8 @@
 """Parser for LakeFlow connector pipeline specifications."""
 
 # pylint: disable=too-few-public-methods
-from typing import List, Dict, Any, Optional
 import json
+from typing import Any, Dict, List, Optional
 
 from pydantic import (
     BaseModel,

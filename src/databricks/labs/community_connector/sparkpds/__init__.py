@@ -5,13 +5,13 @@ This module provides the infrastructure for registering LakeflowSource
 data sources with Spark.
 """
 
-from databricks.labs.community_connector.sparkpds.registry import (
-    register,
-)
 from databricks.labs.community_connector.sparkpds.lakeflow_datasource import (
+    LakeflowBatchReader,
     LakeflowSource,
     LakeflowStreamReader,
-    LakeflowBatchReader,
+)
+from databricks.labs.community_connector.sparkpds.registry import (
+    register,
 )
 
 __all__ = [
