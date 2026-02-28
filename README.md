@@ -13,11 +13,13 @@ A [Lakeflow Community Connector](https://github.com/databrickslabs/lakeflow-comm
 ## Features
 
 - **QIDO-RS** based incremental ingestion with a `StudyDate` cursor
-- **Three tables**: `studies`, `series`, `instances`
-- **Optional WADO-RS** file retrieval — stores `.dcm` files in a Unity Catalog Volume
+- **Four tables**: `studies`, `series`, `instances`, `diagnostics`
+- **Optional WADO-RS** file retrieval — stores `.dcm` files in a Unity Catalog Volume (verified: 526 KB CT slice from Orthanc demo)
+- **Optional full DICOM JSON metadata** per instance via `fetch_metadata=true` (stored as `VariantType` on DBR 15.x+)
 - **Authentication**: `none`, `basic`, `bearer`
 - **Pagination**: configurable page size with automatic looping
 - **Lookback window**: catch late-arriving studies with `lookback_days`
+- **Diagnostics table**: probes all QIDO-RS + WADO-RS endpoints on every run to report server capabilities and latency
 
 ## Supported Systems
 
@@ -25,19 +27,19 @@ A [Lakeflow Community Connector](https://github.com/databrickslabs/lakeflow-comm
 |--------|-------|--------|
 | Any DICOMweb-compliant server (QIDO-RS / WADO-RS) | Hierarchical QIDO-RS endpoints | Available |
 | [Orthanc](https://www.orthanc-server.com/) | Via DICOMweb plugin | Available |
-| [AWS S3 Static WADO Server](https://github.com/RadiantHealth/s3-static-wado) | Auto-detected frame retrieval | Available |
+| [Static DICOMweb Server](https://github.com/RadicalImaging/static-dicomweb) (incl. AWS S3 Static WADO) | Auto-detected frame retrieval | Available |
 | [dcm4chee](https://www.dcm4che.org/) | `dcm4chee` + Keycloak OAuth2 | Phase 3 — planned |
 
-### AWS S3 Static WADO Server Compatibility
+### Static DICOMweb Server Compatibility
 
-The connector auto-detects S3 Static WADO Server endpoints, which use frame-based WADO-RS retrieval instead of full DICOM file downloads.
+The connector is compatible with [RadicalImaging/static-dicomweb](https://github.com/RadicalImaging/static-dicomweb) and its AWS S3-hosted deployments (S3 Static WADO). These servers use frame-based WADO-RS retrieval instead of full DICOM file downloads, and only expose hierarchical QIDO-RS endpoints (flat `/series` and `/instances` return 403).
 
-**Endpoint pattern (S3 Static WADO):**
+**Endpoint pattern (Static DICOMweb / S3 Static WADO):**
 ```
 GET /studies?limit=101&offset=0&...                                      ← flat studies (same)
-GET /studies/{uid}/series?includefield=...                               ← hierarchical series
-GET /studies/{uid}/series/{uid}/metadata                                 ← WADO-RS instance metadata
-GET /studies/{uid}/series/{uid}/instances/{uid}/frames/1                 ← frame retrieval
+GET /studies/{uid}/series?includefield=...                               ← hierarchical series only
+GET /studies/{uid}/series/{uid}/metadata                                 ← WADO-RS series metadata
+GET /studies/{uid}/series/{uid}/instances/{uid}/frames/1                 ← frame retrieval (JPEG-LS)
 ```
 
 Set `wado_mode=frames` to force frame retrieval, or leave it at the default `wado_mode=auto` to detect automatically on the first WADO-RS call.
@@ -112,7 +114,7 @@ for record in records_iter:
 | `full` | `GET .../instances/{uid}` (multipart/related) | `.dcm` |
 | `frames` | `GET .../instances/{uid}/frames/1` (image/jpeg) | `.jpg` |
 
-Use `wado_mode=frames` explicitly for AWS S3 Static WADO Server to skip the auto-detection probe.
+Use `wado_mode=frames` explicitly for Static DICOMweb / S3 Static WADO Server deployments to skip the auto-detection probe.
 
 ---
 

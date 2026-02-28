@@ -4,7 +4,7 @@
 
 - emanuele.rinaldi@databricks.com
 
-This documentation provides setup instructions and reference information for the DICOMweb source connector, which ingests DICOM study, series, and instance metadata from any DICOMweb-compliant VNA or PACS system.
+This documentation provides setup instructions and reference information for the DICOMweb source connector, which ingests DICOM study, series, and instance metadata from any DICOMweb-compliant VNA or PACS system into Databricks Delta tables. It also exposes a `diagnostics` table that probes server capabilities on every pipeline run.
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ OPTIONS (
   base_url                 'https://your-pacs.example.com/dicom-web',
   auth_type                'none',
   sourceName               'dicomweb',
-  externalOptionsAllowList 'fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests'
+  externalOptionsAllowList 'fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests,fetch_metadata,wado_mode'
   -- For Basic auth:
   -- auth_type 'basic',
   -- username  'svc-dicom',
@@ -116,7 +116,7 @@ In the Additional Options table, add the following rows:
 | `base_url` | `https://your-pacs.example.com/dicom-web` |
 | `auth_type` | `none` (or `basic` / `bearer`) |
 | `sourceName` | `dicomweb` |
-| `externalOptionsAllowList` | `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests` |
+| `externalOptionsAllowList` | `fetch_dicom_files,dicom_volume_path,lookback_days,page_size,start_date,download_threads,max_concurrent_requests,fetch_metadata,wado_mode` |
 
 Add `username` + `password` or `token` rows as needed for authenticated endpoints.
 
@@ -170,7 +170,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 - **Primary Key**: `SeriesInstanceUID`
 - **Cursor Field**: `StudyDate`
 - **Ingestion Type**: CDC
-- **Source endpoint**: `QIDO-RS GET /series?StudyDate={range}`
+- **Source endpoint**: `QIDO-RS GET /studies/{uid}/series` (hierarchical, one call per study)
 
 | Column | Type | DICOM Tag | Description |
 |--------|------|-----------|-------------|
@@ -188,7 +188,7 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 - **Primary Key**: `SOPInstanceUID`
 - **Cursor Field**: `StudyDate`
 - **Ingestion Type**: CDC
-- **Source endpoint**: `QIDO-RS GET /instances?StudyDate={range}`
+- **Source endpoint**: `QIDO-RS GET /studies/{uid}/series/{uid}/instances` (hierarchical, one call per series)
 
 | Column | Type | DICOM Tag | Description |
 |--------|------|-----------|-------------|
@@ -200,7 +200,40 @@ The DICOMweb connector exposes the following tables, corresponding to the three 
 | `StudyDate` | STRING | 00080020 | Study date `YYYYMMDD` (cursor field — consistent with QIDO-RS filter) |
 | `ContentDate` | STRING | 00080023 | Content creation date `YYYYMMDD` |
 | `ContentTime` | STRING | 00080033 | Content creation time `HHMMSS` |
-| `dicom_file_path` | STRING | — | Path to `.dcm` file in UC Volume (populated when `fetch_dicom_files=true`) |
+| `dicom_file_path` | STRING | — | Path to `.dcm` or `.jpg` file in UC Volume (populated when `fetch_dicom_files=true`) |
+| `metadata` | VARIANT / STRING | — | Full DICOM JSON for this instance (populated when `fetch_metadata=true`). `VARIANT` on DBR 15.x+, JSON string on older runtimes. |
+
+### `diagnostics`
+- **Description**: Capability probe results. One row per DICOMweb endpoint, updated on every pipeline trigger. Useful for initial connectivity validation and ongoing health monitoring.
+- **Primary Key**: `endpoint`
+- **Cursor Field**: `probe_timestamp`
+- **Ingestion Type**: CDC
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `endpoint` | STRING (PK) | URL path pattern probed (e.g. `/studies?limit=1`) |
+| `category` | STRING | `QIDO-RS` or `WADO-RS` |
+| `description` | STRING | Human-readable description of what the endpoint does |
+| `supported` | STRING | `yes`, `no`, `partial`, `unknown`, or `error` |
+| `status_code` | INT | HTTP status code returned (null on network error) |
+| `content_type` | STRING | Content-Type header from the response |
+| `latency_ms` | INT | Round-trip latency in milliseconds |
+| `notes` | STRING | Additional context: error message, access-denied reason, etc. |
+| `probe_timestamp` | STRING | ISO-8601 UTC timestamp of this probe run |
+
+**Example output for the public Orthanc demo (`https://orthanc.uclouvain.be/demo/dicom-web`):**
+
+| endpoint | supported | status_code | latency_ms |
+|----------|-----------|-------------|------------|
+| `/studies` | yes | 200 | 128 |
+| `/studies/{uid}/series` | yes | 200 | 124 |
+| `/studies/{uid}/series/{uid}/instances` | yes | 200 | 616 |
+| `/studies/{uid}/series/{uid}/metadata` | yes | 200 | 501 |
+| `/studies/{uid}/series/{uid}/instances/{uid}/metadata` | yes | 200 | 137 |
+| `/studies/{uid}/series/{uid}/instances/{uid}` | yes | 200 | 616 |
+| `/studies/{uid}/series/{uid}/instances/{uid}/frames/{n}` | partial | 400 | 122 |
+| `/studies/{uid}/series/{uid}/instances/{uid}/rendered` | partial | 400 | 133 |
+| `/studies/{uid}` | yes | 200 | 13128 |
 
 ## Data Type Mapping
 
@@ -286,6 +319,20 @@ pipeline_spec = {
                     # Optional: retrieve raw .dcm files via WADO-RS
                     # "fetch_dicom_files": "true",
                     # "dicom_volume_path": "/Volumes/main/dicom_bronze/dicom_files",
+                    # "wado_mode":          "auto",   # or "full" / "frames"
+                    # Optional: store full DICOM JSON in the metadata column
+                    # "fetch_metadata": "true",
+                },
+            }
+        },
+        {
+            "table": {
+                "source_table": "diagnostics",
+                "destination_catalog": "main",
+                "destination_schema":  "dicom_bronze",
+                "table_configuration": {
+                    "scd_type":     "SCD_TYPE_1",
+                    "primary_keys": ["endpoint"],
                 },
             }
         },
@@ -303,9 +350,11 @@ ingest(spark, pipeline_spec)
 | `lookback_days` | No | `1` | Days to subtract from the cursor on each run to catch late-arriving studies |
 | `page_size` | No | `100` | Number of records per QIDO-RS request (increase for large PACS systems) |
 | `start_date` | No | `19000101` | Initial cursor date for the very first run (`YYYYMMDD`). Use a recent date (e.g., `20240101`) to avoid full-history scans. |
-| `fetch_dicom_files` | No | `false` | When `true`, retrieves each `.dcm` file via WADO-RS and writes it to `dicom_volume_path` |
-| `dicom_volume_path` | No | — | Required when `fetch_dicom_files=true`. Unity Catalog Volume path where `.dcm` files are written. |
-| `max_concurrent_requests` | No | `16` | Maximum number of simultaneous WADO-RS connections opened against the PACS per micro-batch. Instances are divided into this many Spark tasks; each task downloads its share sequentially. **Lower this value for PACS systems that rate-limit or have limited connection capacity.** Only active when `fetch_dicom_files=true`. |
+| `fetch_dicom_files` | No | `false` | When `true`, retrieves each `.dcm` (or `.jpg` for frame mode) file via WADO-RS and writes it to `dicom_volume_path`. Verified working against Orthanc (526 KB CT slice). |
+| `dicom_volume_path` | No | — | Required when `fetch_dicom_files=true`. Unity Catalog Volume path where files are written. |
+| `wado_mode` | No | `auto` | WADO-RS retrieval mode: `auto` (try full `.dcm`, fall back to frames on 404/406/415), `full` (always `.dcm`), `frames` (always `.jpg` frame 1). Use `frames` for [Static DICOMweb](https://github.com/RadicalImaging/static-dicomweb) / S3 Static WADO deployments. |
+| `fetch_metadata` | No | `false` | When `true`, fetches full DICOM JSON metadata for each instance via `WADO-RS GET .../series/{uid}/metadata` and stores it in the `metadata` column. |
+| `max_concurrent_requests` | No | `16` | Maximum number of simultaneous WADO-RS connections opened against the PACS per micro-batch. Instances are divided into this many Spark tasks; each task downloads its share sequentially. **Lower this value for PACS systems that rate-limit or have limited connection capacity.** Only active when `fetch_dicom_files=true` or `fetch_metadata=true`. |
 | `download_threads` | No | `8` | Thread-level parallelism per page when using the connector outside of Spark (standalone). Not used in the Lakeflow pipeline — use `max_concurrent_requests` instead. |
 
 ### Step 3: Run and Schedule the Pipeline
@@ -360,4 +409,5 @@ ingest(spark, pipeline_spec)
 - [WADO-RS Specification](https://dicom.nema.org/medical/dicom/current/output/chtml/part18/sect_10.4.html)
 - [Orthanc DICOMweb Plugin](https://orthanc.uclouvain.be/book/plugins/dicomweb.html)
 - [dcm4chee DICOMweb Documentation](https://dcm4che.atlassian.net/wiki/spaces/d2/pages/1835038/DICOMweb)
+- [Static DICOMweb Server (RadicalImaging)](https://github.com/RadicalImaging/static-dicomweb)
 - [Lakeflow Community Connectors](https://github.com/databrickslabs/lakeflow-community-connectors)
