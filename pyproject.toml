@@ -34,6 +34,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: tests that require network access and/or pyspark >= 4.0",
+]
 
 [tool.ruff]
 line-length = 120
