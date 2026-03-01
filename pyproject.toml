@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lakeflow-community-connectors-dicomweb"
-version = "0.2.0"
+version = "1.0.0"
 description = "DICOMweb VNA/PACS connector for Lakeflow Community Connectors"
 readme = "README.md"
 license = {file = "LICENSE"}
