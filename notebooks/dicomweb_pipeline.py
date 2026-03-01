@@ -177,14 +177,14 @@ ingest(spark, pipeline_spec)
 spark.sql(f"""
 CREATE OR REPLACE VIEW {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances_view AS
 SELECT
-  SOPInstanceUID,
-  SeriesInstanceUID,
-  StudyInstanceUID,
-  SOPClassUID,
-  InstanceNumber,
-  StudyDate,
-  ContentDate,
-  ContentTime,
+  SOPInstanceUID  AS sop_instance_uid,
+  SeriesInstanceUID AS series_instance_uid,
+  StudyInstanceUID AS study_instance_uid,
+  SOPClassUID     AS sop_class_uid,
+  InstanceNumber  AS instance_number,
+  StudyDate       AS study_date,
+  ContentDate     AS content_date,
+  ContentTime     AS content_time,
   dicom_file_path AS local_path,
   metadata        AS meta,
   connection_name
