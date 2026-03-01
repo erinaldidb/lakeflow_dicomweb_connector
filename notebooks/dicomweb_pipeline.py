@@ -175,7 +175,7 @@ ingest(spark, pipeline_spec)
 # COMMAND ----------
 
 spark.sql(f"""
-CREATE OR REPLACE VIEW {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances_view AS
+CREATE OR REPLACE VIEW {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.object_catalog AS
 SELECT
   dicom_file_path AS local_path,
   metadata        AS meta
