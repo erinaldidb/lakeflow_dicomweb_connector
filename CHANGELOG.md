@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.2.0 — 2026-02-28
+
+### New Features
+
+#### `diagnostics` Table
+- New built-in table that probes every QIDO-RS and WADO-RS endpoint on every pipeline trigger
+- Reports `supported`, `status_code`, `content_type`, `latency_ms`, and `notes` per endpoint
+- Covers 9 endpoints: flat and hierarchical QIDO-RS, series metadata, full instance retrieval, frame retrieval, and rendered image
+- Useful for initial connectivity validation and ongoing PACS health monitoring
+
+#### Static DICOMweb / S3 Static WADO Server Support
+- New `wado_mode` option: `auto` (default), `full` (`.dcm`), `frames` (`.jpg` frame 1)
+- `wado_mode=auto` tries full DICOM retrieval first; automatically falls back to frame retrieval on HTTP 404/406/415 and caches the detected mode for the rest of the run
+- Flat `/series` and `/instances` QIDO-RS endpoints gracefully handled when blocked (HTTP 403) — connector falls back to hierarchical queries
+- Verified against [RadicalImaging/static-dicomweb](https://github.com/RadicalImaging/static-dicomweb) and AWS S3 Static WADO deployments
+
+#### Full DICOM JSON Metadata (`fetch_metadata=true`)
+- New `fetch_metadata` table option (default: `false`)
+- When enabled, fetches the full DICOM JSON object for each instance via `WADO-RS GET .../series/{uid}/metadata`
+- Stored in the `metadata` column as native `VariantType` (Spark 4.0+ / DBR 15.x+)
+- `parse_value()` utility handles `JSON string → VariantVal` conversion transparently — no `selectExpr` step needed in the pipeline view
+- Query with Spark semi-structured syntax: `metadata:00080060.Value[0]`
+
+#### `connection_name` Lineage Column
+- Every table (`studies`, `series`, `instances`, `diagnostics`) now includes a `connection_name` column
+- Defaults to `base_url`; override with the `connection_name` connection option
+- Enables multi-source ingestion into shared Delta tables with full lineage tracing back to the originating PACS
+
+#### `object_catalog` Presentation View
+- Created automatically after each pipeline run as Step 4 of the ingestion notebook
+- Exposes all `instances` columns under consistent snake_case names
+- `dicom_file_path` → `local_path`, `metadata` → `meta`; all PascalCase DICOM columns aliased (e.g. `SOPInstanceUID` → `sop_instance_uid`)
+
+### Improvements
+
+- **`max_concurrent_requests`** option (default: `16`): bounds simultaneous WADO-RS connections per Spark task to prevent source PACS overload
+- **`download_threads`** option (default: `8`): thread-level parallelism for standalone (non-Spark) use
+- Unit test count increased from 53 → 66; integration tests added for VariantType chain and OSS declarative pipeline (`pyspark.pipelines`)
+- Integration tests marked with `pytest.mark.integration` and excluded from CI (require live network access to Orthanc demo)
+- Ruff formatting enforced across all source files and notebooks
+
+### Schema Changes
+
+| Table | Change |
+|-------|--------|
+| `studies` | Added `connection_name` column |
+| `series` | Added `connection_name` column |
+| `instances` | Added `connection_name` column; `metadata` now `VariantType` (was `StringType`) |
+| `diagnostics` | New table |
+| `object_catalog` | New view over `instances` with snake_case column names |
+
+### Installation
+
+```bash
+%pip install git+https://github.com/erinaldidb/lakeflow_dicomweb_connector.git@v0.2.0
+```
+
+---
+
 ## v0.1.0 — 2026-02-28
 
 Initial release of the Lakeflow DICOMweb Community Connector.

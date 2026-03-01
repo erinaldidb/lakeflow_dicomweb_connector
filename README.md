@@ -49,7 +49,7 @@ Set `wado_mode=frames` to force frame retrieval, or leave it at the default `wad
 ## Installation
 
 ```bash
-pip install git+https://github.com/erinaldidb/lakeflow_dicomweb_connector.git
+pip install git+https://github.com/erinaldidb/lakeflow_dicomweb_connector.git@v0.2.0
 ```
 
 The `lakeflow-community-connectors` framework is **vendored** into this package — no additional PyPI dependencies beyond `pyspark`, `requests`, and `pydantic`.
