@@ -261,8 +261,8 @@ def register_lakeflow_source(spark):
 
     def _parse_instance(dicom_obj: dict) -> dict:
         record = _parse_dicom_json(dicom_obj, INSTANCE_TAG_MAP)
-        record.setdefault("dicom_file_path", None)
-        record.setdefault("metadata", None)
+        record.setdefault("local_path", None)
+        record.setdefault("meta", None)
         return record
 
     ########################################################
@@ -309,8 +309,8 @@ def register_lakeflow_source(spark):
             StructField("StudyDate", StringType(), nullable=True),
             StructField("ContentDate", StringType(), nullable=True),
             StructField("ContentTime", StringType(), nullable=True),
-            StructField("dicom_file_path", StringType(), nullable=True),
-            StructField("metadata", VariantType(), nullable=True),
+            StructField("local_path", StringType(), nullable=True),
+            StructField("meta", VariantType(), nullable=True),
             StructField("connection_name", StringType(), nullable=True),
         ]
     )
@@ -652,7 +652,7 @@ def register_lakeflow_source(spark):
                                 record["SeriesInstanceUID"] = series_uid
                             if fetch_metadata:
                                 sop_uid = record.get("SOPInstanceUID")
-                                record["metadata"] = sop_to_meta.get(sop_uid) if sop_uid else None
+                                record["meta"] = sop_to_meta.get(sop_uid) if sop_uid else None
                             if fetch_files:
                                 record = self._attach_dicom_file(record, volume_path, wado_mode)
                             record["connection_name"] = self._connection_name
@@ -856,10 +856,10 @@ def register_lakeflow_source(spark):
                 except OSError:
                     pass
                 dest_path.write_bytes(file_bytes)
-                record["dicom_file_path"] = str(dest_path)
+                record["local_path"] = str(dest_path)
             except Exception as exc:
                 logging.getLogger(__name__).error("WADO-RS retrieval failed for %s: %s", sop_uid, exc)
-                record["dicom_file_path"] = None
+                record["local_path"] = None
             return record
 
     ########################################################
@@ -1036,10 +1036,10 @@ def register_lakeflow_source(spark):
                             except OSError:
                                 pass
                             dest.write_bytes(file_bytes)
-                            record["dicom_file_path"] = str(dest)
+                            record["local_path"] = str(dest)
                         except Exception as exc:
                             logging.getLogger(__name__).error("WADO-RS failed for %s: %s", inst.get("sop_uid"), exc)
-                            record["dicom_file_path"] = None
+                            record["local_path"] = None
                     rows.append(parse_value(record, self.schema))
                 return iter(rows)
             else:

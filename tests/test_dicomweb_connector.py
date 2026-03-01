@@ -64,8 +64,8 @@ class TestParser:
         assert record["SOPInstanceUID"] == "1.2.840.113619.2.5.1762583153.215519.978957063.78.1.1"
         assert record["InstanceNumber"] == 1
         assert record["ContentDate"] == "20231215"
-        assert record["dicom_file_path"] is None  # not yet populated
-        assert record["metadata"] is None  # not yet populated
+        assert record["local_path"] is None  # not yet populated
+        assert record["meta"] is None  # not yet populated
 
     def test_parse_pn_no_alphabetic(self):
         """PN tag without Alphabetic — fall back gracefully."""
@@ -116,11 +116,11 @@ class TestSchemas:
         schema = get_schema("instances")
         field_names = [f.name for f in schema.fields]
         assert "SOPInstanceUID" in field_names
-        assert "dicom_file_path" in field_names
-        assert "metadata" in field_names
-        meta_field = next(f for f in schema.fields if f.name == "metadata")
+        assert "local_path" in field_names
+        assert "meta" in field_names
+        meta_field = next(f for f in schema.fields if f.name == "meta")
         assert isinstance(meta_field.dataType, VariantType), (
-            "metadata must be VariantType — parse_value() converts JSON strings to VariantVal"
+            "meta must be VariantType — parse_value() converts JSON strings to VariantVal"
         )
 
     def test_unknown_table_raises(self):
@@ -131,8 +131,8 @@ class TestSchemas:
         uid_field = next(f for f in STUDIES_SCHEMA.fields if f.name == "StudyInstanceUID")
         assert uid_field.nullable is False
 
-    def test_dicom_file_path_nullable(self):
-        fp_field = next(f for f in INSTANCES_SCHEMA.fields if f.name == "dicom_file_path")
+    def test_local_path_nullable(self):
+        fp_field = next(f for f in INSTANCES_SCHEMA.fields if f.name == "local_path")
         assert fp_field.nullable is True
 
 
@@ -212,8 +212,8 @@ class TestConnector:
         records = list(records_iter)
         # 2 studies × 1 series × 3 instances = 6
         assert len(records) == 6
-        assert all(r["dicom_file_path"] is None for r in records)
-        assert all(r["metadata"] is None for r in records)
+        assert all(r["local_path"] is None for r in records)
+        assert all(r["meta"] is None for r in records)
         assert all(r["connection_name"] == dicomweb_options["base_url"] for r in records)
 
     def test_read_table_instances_fetch_files_missing_volume_raises(self, dicomweb_options):
@@ -243,10 +243,10 @@ class TestConnector:
         )
         records = list(records_iter)
         assert len(records) == 3
-        assert all(r["dicom_file_path"] is not None for r in records)
-        assert all(r["dicom_file_path"].endswith(".dcm") for r in records)
+        assert all(r["local_path"] is not None for r in records)
+        assert all(r["local_path"].endswith(".dcm") for r in records)
         for r in records:
-            assert pathlib.Path(r["dicom_file_path"]).exists()
+            assert pathlib.Path(r["local_path"]).exists()
 
     def test_read_table_instances_fetch_files_frames_mode(
         self, dicomweb_options, studies_response, series_response, instances_response, tmp_path
@@ -265,8 +265,8 @@ class TestConnector:
         )
         records = list(records_iter)
         assert len(records) == 3
-        assert all(r["dicom_file_path"] is not None for r in records)
-        assert all(r["dicom_file_path"].endswith(".jpg") for r in records)
+        assert all(r["local_path"] is not None for r in records)
+        assert all(r["local_path"].endswith(".jpg") for r in records)
         connector._client.retrieve_instance_frames.assert_called()
         connector._client.retrieve_instance = MagicMock()  # should NOT be called
         connector._client.retrieve_instance.assert_not_called()
@@ -296,7 +296,7 @@ class TestConnector:
         )
         records = list(records_iter)
         assert len(records) == 1
-        assert records[0]["dicom_file_path"].endswith(".jpg")
+        assert records[0]["local_path"].endswith(".jpg")
         # Connector should have cached the detected mode
         assert connector._wado_mode_detected == "frames"
 
@@ -317,11 +317,11 @@ class TestConnector:
         records_iter, _ = connector.read_table("instances", {}, {"fetch_metadata": "true"})
         records = list(records_iter)
         # First record should have metadata populated (matches sop_uid from fixture)
-        assert records[0]["metadata"] is not None
+        assert records[0]["meta"] is not None
         import json as _json
 
         # metadata is always a JSON string (StringType column)
-        meta = records[0]["metadata"]
+        meta = records[0]["meta"]
         assert isinstance(meta, str)
         parsed = _json.loads(meta)
         assert "00080018" in parsed

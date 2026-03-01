@@ -164,20 +164,3 @@ register(spark, source_name)
 # On first run: fetches all available data from start_date (default: all history).
 # On subsequent runs: resumes from the last StudyDate cursor stored by Lakeflow.
 ingest(spark, pipeline_spec)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## 4. Create presentation views
-# MAGIC
-# MAGIC Thin views over the raw Delta tables that expose user-friendly column names.
-
-# COMMAND ----------
-
-spark.sql(f"""
-CREATE OR REPLACE VIEW {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.object_catalog AS
-SELECT
-  dicom_file_path AS local_path,
-  metadata        AS meta
-FROM {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances
-""")
