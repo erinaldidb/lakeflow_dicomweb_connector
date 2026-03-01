@@ -111,11 +111,17 @@ class TestSchemas:
         assert "Modality" in field_names
 
     def test_get_schema_instances(self):
+        from pyspark.sql.types import VariantType
+
         schema = get_schema("instances")
         field_names = [f.name for f in schema.fields]
         assert "SOPInstanceUID" in field_names
         assert "dicom_file_path" in field_names
         assert "metadata" in field_names
+        meta_field = next(f for f in schema.fields if f.name == "metadata")
+        assert isinstance(meta_field.dataType, VariantType), (
+            "metadata must be VariantType — parse_value() converts JSON strings to VariantVal"
+        )
 
     def test_unknown_table_raises(self):
         with pytest.raises(ValueError, match="Unknown table"):
@@ -157,23 +163,14 @@ class TestConnector:
 
     def test_read_table_metadata(self, dicomweb_options):
         connector = DICOMwebLakeflowConnect(dicomweb_options)
-        meta = connector.read_table_metadata("studies", {})
-        assert meta["primary_keys"] == ["StudyInstanceUID"]
-        assert meta["cursor_field"] == "StudyDate"
-        assert meta["ingestion_type"] == "cdc"
-        assert "column_expressions" not in meta  # only instances has this
-
-    def test_read_table_metadata_instances_has_column_expressions(self, dicomweb_options):
-        """instances metadata must include column_expressions for parse_json(metadata).
-
-        The ingestion pipeline applies these expressions via selectExpr() in the
-        SDP view so the final Delta table stores metadata as VARIANT, not STRING.
-        """
-        connector = DICOMwebLakeflowConnect(dicomweb_options)
-        meta = connector.read_table_metadata("instances", {})
-        assert meta["primary_keys"] == ["SOPInstanceUID"]
-        assert "column_expressions" in meta
-        assert meta["column_expressions"]["metadata"] == "parse_json(metadata)"
+        for table in ("studies", "series", "instances"):
+            meta = connector.read_table_metadata(table, {})
+            assert "primary_keys" in meta
+            assert meta["cursor_field"] == "StudyDate"
+            assert meta["ingestion_type"] == "cdc"
+            # column_expressions not needed: metadata is VariantType in the schema
+            # and parse_value() handles the JSON string → VariantVal conversion
+            assert "column_expressions" not in meta
 
     def test_read_table_studies(self, dicomweb_options, studies_response):
         connector = DICOMwebLakeflowConnect(dicomweb_options)
@@ -330,10 +327,10 @@ class TestConnector:
         assert "00080018" in parsed
 
     def test_build_metadata_map_returns_json_string(self, dicomweb_options):
-        """_build_metadata_map must always return a JSON string (StringType column).
+        """_build_metadata_map returns plain JSON strings.
 
-        metadata is stored as StringType to avoid Spark's convert_variant()
-        executor issues on DBR serverless.  Callers can CAST to VARIANT in SQL.
+        The schema declares metadata as VariantType; parse_value() in utils.py
+        converts each JSON string to VariantVal before the row is yielded to Spark.
         """
         import json as _json
 

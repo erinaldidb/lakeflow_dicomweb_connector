@@ -23,6 +23,13 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+try:
+    from pyspark.sql.types import VariantType as _VariantType
+    from pyspark.sql.types import VariantVal as _VariantVal
+except ImportError:
+    _VariantType = None  # type: ignore[assignment,misc]
+    _VariantVal = None  # type: ignore[assignment]
+
 
 def _parse_struct(value: Any, field_type: StructType) -> Row:
     if not isinstance(value, dict):
@@ -165,6 +172,12 @@ def parse_value(value: Any, field_type: DataType) -> Any:
         return _parse_array(value, field_type)
     if isinstance(field_type, MapType):
         return _parse_map(value, field_type)
+    if _VariantType is not None and isinstance(field_type, _VariantType):
+        # VariantType (Spark 4.0+): convert JSON string → VariantVal so that
+        # Spark's convert_variant() receives the correct binary representation.
+        if isinstance(value, str):
+            return _VariantVal.parseJson(value)
+        return value  # already a VariantVal
     try:
         field_type_class = type(field_type)
         if field_type_class in _PRIMITIVE_PARSERS:

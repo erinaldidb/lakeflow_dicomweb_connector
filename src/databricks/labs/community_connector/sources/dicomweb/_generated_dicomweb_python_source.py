@@ -42,6 +42,8 @@ from pyspark.sql.types import (
     StructField,
     StructType,
     TimestampType,
+    VariantType,
+    VariantVal,
 )
 from requests.auth import HTTPBasicAuth
 
@@ -143,6 +145,10 @@ def register_lakeflow_source(spark):
             return _parse_array(value, field_type)
         if isinstance(field_type, MapType):
             return _parse_map(value, field_type)
+        if isinstance(field_type, VariantType):
+            if isinstance(value, str):
+                return VariantVal.parseJson(value)
+            return value  # already a VariantVal
         field_type_class = type(field_type)
         if field_type_class in _PRIMITIVE_PARSERS:
             return _PRIMITIVE_PARSERS[field_type_class](value)
@@ -263,13 +269,6 @@ def register_lakeflow_source(spark):
     # sources/dicomweb/dicomweb_schemas.py
     ########################################################
 
-    # metadata is always stored as a JSON string (StringType).
-    # Spark's convert_variant() has strict VariantVal requirements that interact
-    # poorly with executor serialisation on some DBR serverless runtimes.
-    # Callers on DBR 15.x+ can CAST the column: CAST(metadata AS VARIANT).
-    _METADATA_TYPE = StringType()
-    _METADATA_IS_VARIANT = False
-
     STUDIES_SCHEMA = StructType(
         [
             StructField("StudyInstanceUID", StringType(), nullable=False),
@@ -311,9 +310,7 @@ def register_lakeflow_source(spark):
             StructField("ContentDate", StringType(), nullable=True),
             StructField("ContentTime", StringType(), nullable=True),
             StructField("dicom_file_path", StringType(), nullable=True),
-            # Full DICOM JSON; populated when fetch_metadata=true.
-            # VariantType on DBR 15.x+, StringType (JSON string) on older runtimes.
-            StructField("metadata", _METADATA_TYPE, nullable=True),
+            StructField("metadata", VariantType(), nullable=True),
             StructField("connection_name", StringType(), nullable=True),
         ]
     )
@@ -544,10 +541,7 @@ def register_lakeflow_source(spark):
                 "series": "SeriesInstanceUID",
                 "instances": "SOPInstanceUID",
             }
-            meta = {"primary_keys": [pk_map[table_name]], "cursor_field": "StudyDate", "ingestion_type": "cdc"}
-            if table_name == "instances":
-                meta["column_expressions"] = {"metadata": "parse_json(metadata)"}
-            return meta
+            return {"primary_keys": [pk_map[table_name]], "cursor_field": "StudyDate", "ingestion_type": "cdc"}
 
         def read_table(
             self, table_name: str, start_offset: dict, table_options: dict[str, str]

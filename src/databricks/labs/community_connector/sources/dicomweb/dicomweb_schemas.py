@@ -11,16 +11,8 @@ from pyspark.sql.types import (
     StringType,
     StructField,
     StructType,
+    VariantType,
 )
-
-# The metadata column always uses StringType and stores a JSON string.
-# Spark's Python DataSource convert_variant() has strict VariantVal requirements
-# that interact poorly with executor serialisation on some DBR serverless versions.
-# Storing JSON in StringType avoids this entirely.
-# On DBR 15.x+ callers can CAST the column: CAST(metadata AS VARIANT).
-_METADATA_TYPE = StringType()
-METADATA_IS_VARIANT = False
-_VariantVal = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Study-level schema
@@ -83,8 +75,8 @@ INSTANCES_SCHEMA = StructType(
         # Populated when fetch_dicom_files=true; path inside Unity Catalog Volume
         StructField("dicom_file_path", StringType(), nullable=True),
         # Full DICOM JSON for this instance; populated when fetch_metadata=true.
-        # VariantType on DBR 15.x+, StringType (JSON string) on older runtimes.
-        StructField("metadata", _METADATA_TYPE, nullable=True),
+        # Stored as VariantType; parse_value() converts the JSON string → VariantVal.
+        StructField("metadata", VariantType(), nullable=True),
         # Lineage: UC connection name that produced this record
         StructField("connection_name", StringType(), nullable=True),
     ]
