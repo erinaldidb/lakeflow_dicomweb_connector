@@ -57,7 +57,7 @@ source_name = "dicomweb"
 # Destination — edit to match your Unity Catalog layout
 # ---------------------------------------------------------------------------
 DESTINATION_CATALOG = "main"
-DESTINATION_SCHEMA  = "dicom_bronze"
+DESTINATION_SCHEMA = "dicom_bronze"
 
 # Optional: Unity Catalog Volume path for raw .dcm file storage.
 # Only used when fetch_dicom_files is enabled on the instances table.
@@ -93,14 +93,14 @@ pipeline_spec = {
             "table": {
                 "source_table": "studies",
                 "destination_catalog": DESTINATION_CATALOG,
-                "destination_schema":  DESTINATION_SCHEMA,
-                "destination_table":   "studies",
+                "destination_schema": DESTINATION_SCHEMA,
+                "destination_table": "studies",
                 "table_configuration": {
-                    "scd_type":    "SCD_TYPE_1",
+                    "scd_type": "SCD_TYPE_1",
                     "primary_keys": ["StudyInstanceUID"],
                     # Fetch studies updated in the last 1 day on each run
                     "lookback_days": "1",
-                    "page_size":     "200",
+                    "page_size": "200",
                 },
             }
         },
@@ -112,13 +112,13 @@ pipeline_spec = {
             "table": {
                 "source_table": "series",
                 "destination_catalog": DESTINATION_CATALOG,
-                "destination_schema":  DESTINATION_SCHEMA,
-                "destination_table":   "series",
+                "destination_schema": DESTINATION_SCHEMA,
+                "destination_table": "series",
                 "table_configuration": {
-                    "scd_type":    "SCD_TYPE_1",
+                    "scd_type": "SCD_TYPE_1",
                     "primary_keys": ["SeriesInstanceUID"],
                     "lookback_days": "1",
-                    "page_size":     "200",
+                    "page_size": "200",
                 },
             }
         },
@@ -134,13 +134,13 @@ pipeline_spec = {
             "table": {
                 "source_table": "instances",
                 "destination_catalog": DESTINATION_CATALOG,
-                "destination_schema":  DESTINATION_SCHEMA,
-                "destination_table":   "instances",
+                "destination_schema": DESTINATION_SCHEMA,
+                "destination_table": "instances",
                 "table_configuration": {
-                    "scd_type":    "SCD_TYPE_1",
+                    "scd_type": "SCD_TYPE_1",
                     "primary_keys": ["SOPInstanceUID"],
-                    "lookback_days":      "1",
-                    "page_size":          "200",
+                    "lookback_days": "1",
+                    "page_size": "200",
                     # -- WADO-RS file retrieval (optional) --
                     # "fetch_dicom_files":  "true",
                     # "dicom_volume_path":  DICOM_VOLUME_PATH,
@@ -165,3 +165,19 @@ register(spark, source_name)
 # On subsequent runs: resumes from the last StudyDate cursor stored by Lakeflow.
 ingest(spark, pipeline_spec)
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4. Create presentation views
+# MAGIC
+# MAGIC Thin views over the raw Delta tables that expose user-friendly column names.
+
+# COMMAND ----------
+
+spark.sql(f"""
+CREATE OR REPLACE VIEW {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances_view AS
+SELECT
+  dicom_file_path AS local_path,
+  metadata        AS meta
+FROM {DESTINATION_CATALOG}.{DESTINATION_SCHEMA}.instances
+""")
