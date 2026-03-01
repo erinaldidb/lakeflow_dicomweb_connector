@@ -13,7 +13,7 @@ A [Lakeflow Community Connector](https://github.com/databrickslabs/lakeflow-comm
 ## Features
 
 - **QIDO-RS** based incremental ingestion with a `StudyDate` cursor
-- **Four tables**: `studies`, `series`, `instances`, `diagnostics`
+- **Four tables + one view**: `studies`, `series`, `instances`, `diagnostics`, and `object_catalog` (snake_case presentation view over `instances`)
 - **Optional WADO-RS** file retrieval — stores `.dcm` files in a Unity Catalog Volume (verified: 526 KB CT slice from Orthanc demo)
 - **Optional full DICOM JSON metadata** per instance via `fetch_metadata=true` (stored as `VariantType` on DBR 15.x+)
 - **Authentication**: `none`, `basic`, `bearer`
@@ -163,6 +163,31 @@ Use `wado_mode=frames` explicitly for Static DICOMweb / S3 Static WADO Server de
 | `dicom_file_path` | string (nullable) | — | Path to `.dcm` or `.jpg` in Volume |
 | `metadata` | variant/string (nullable) | — | Full DICOM JSON for this instance; populated when `fetch_metadata=true`. `VariantType` on DBR 15.x+, JSON string on older runtimes. |
 | `connection_name` | string | — | UC connection name (lineage) |
+
+### `object_catalog` (view)
+
+A presentation view created automatically after each pipeline run. It selects all columns from `instances` and exposes them under snake_case names, making the table easy to query from SQL or BI tools without case-sensitivity issues.
+
+| View column | Source column | Type |
+|-------------|---------------|------|
+| `sop_instance_uid` | `SOPInstanceUID` | string (PK) |
+| `series_instance_uid` | `SeriesInstanceUID` | string |
+| `study_instance_uid` | `StudyInstanceUID` | string |
+| `sop_class_uid` | `SOPClassUID` | string |
+| `instance_number` | `InstanceNumber` | int |
+| `study_date` | `StudyDate` | string |
+| `content_date` | `ContentDate` | string |
+| `content_time` | `ContentTime` | string |
+| `local_path` | `dicom_file_path` | string |
+| `meta` | `metadata` | variant |
+| `connection_name` | `connection_name` | string |
+
+```sql
+-- Example: list all CT instances with their file path
+SELECT sop_instance_uid, local_path, meta:00080060.Value[0] AS modality
+FROM main.dicom_bronze.object_catalog
+WHERE meta:00080060.Value[0] = 'CT';
+```
 
 ### `diagnostics`
 

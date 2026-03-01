@@ -218,6 +218,37 @@ SELECT SOPInstanceUID, metadata:00080060.Value[0] AS Modality FROM instances;
 SELECT * FROM instances WHERE metadata:00080060.Value[0] = 'CT';
 ```
 
+### `object_catalog` (view)
+- **Description**: Presentation view over `instances`. Created automatically after each pipeline run. All columns are snake_case — `dicom_file_path` is aliased to `local_path` and `metadata` to `meta`.
+- **Backed by**: `instances` Delta table
+
+| Column | Type | Source column | Description |
+|--------|------|---------------|-------------|
+| `sop_instance_uid` | STRING (PK) | `SOPInstanceUID` | Globally unique SOP instance UID |
+| `series_instance_uid` | STRING | `SeriesInstanceUID` | Parent series UID |
+| `study_instance_uid` | STRING | `StudyInstanceUID` | Parent study UID |
+| `sop_class_uid` | STRING | `SOPClassUID` | SOP class (storage type) UID |
+| `instance_number` | INT | `InstanceNumber` | Instance number within the series |
+| `study_date` | STRING | `StudyDate` | Study date `YYYYMMDD` |
+| `content_date` | STRING | `ContentDate` | Content creation date `YYYYMMDD` |
+| `content_time` | STRING | `ContentTime` | Content creation time `HHMMSS` |
+| `local_path` | STRING | `dicom_file_path` | Path to `.dcm` or `.jpg` file in UC Volume |
+| `meta` | VARIANT | `metadata` | Full DICOM JSON (populated when `fetch_metadata=true`) |
+| `connection_name` | STRING | `connection_name` | UC connection name (lineage) |
+
+**Example queries:**
+```sql
+-- List all CT instances with their file path
+SELECT sop_instance_uid, local_path, meta:00080060.Value[0] AS modality
+FROM main.dicom_bronze.object_catalog
+WHERE meta:00080060.Value[0] = 'CT';
+
+-- Join with studies for a complete patient-level view
+SELECT s.PatientName, s.StudyDate, o.sop_instance_uid, o.local_path
+FROM main.dicom_bronze.studies s
+JOIN main.dicom_bronze.object_catalog o ON s.StudyInstanceUID = o.study_instance_uid;
+```
+
 ### `diagnostics`
 - **Description**: Capability probe results. One row per DICOMweb endpoint, updated on every pipeline trigger. Useful for initial connectivity validation and ongoing health monitoring.
 - **Primary Key**: `endpoint`
@@ -364,6 +395,24 @@ pipeline_spec = {
 
 register(spark, "dicomweb")
 ingest(spark, pipeline_spec)
+
+# Step 4: create the object_catalog presentation view
+spark.sql(f"""
+CREATE OR REPLACE VIEW {CATALOG}.{SCHEMA}.object_catalog AS
+SELECT
+  SOPInstanceUID  AS sop_instance_uid,
+  SeriesInstanceUID AS series_instance_uid,
+  StudyInstanceUID AS study_instance_uid,
+  SOPClassUID     AS sop_class_uid,
+  InstanceNumber  AS instance_number,
+  StudyDate       AS study_date,
+  ContentDate     AS content_date,
+  ContentTime     AS content_time,
+  dicom_file_path AS local_path,
+  metadata        AS meta,
+  connection_name
+FROM {CATALOG}.{SCHEMA}.instances
+""")
 ```
 
 **Table-Specific Options:**
@@ -414,8 +463,8 @@ ingest(spark, pipeline_spec)
    - Reduce `page_size` if the PACS is timing out on large result sets
    - Run `studies` and `series` before enabling `instances`, which is typically the largest table
 
-5. **`dicom_file_path` is NULL despite `fetch_dicom_files=true`**
-   - The connector handles write failures gracefully — if WADO-RS retrieval or the Volume write fails, `dicom_file_path` is set to `NULL` and the stream continues rather than crashing
+5. **`dicom_file_path` / `local_path` is NULL despite `fetch_dicom_files=true`**
+   - The connector handles write failures gracefully — if WADO-RS retrieval or the Volume write fails, `dicom_file_path` is set to `NULL` (and consequently `local_path` in `object_catalog`) and the stream continues rather than crashing
    - Check the connector logs for `WADO-RS retrieval failed` ERROR messages to identify the root cause
    - Unity Catalog Volume FUSE mounts do not support `mkdir` via standard POSIX syscalls from streaming worker subprocesses — the connector works around this by attempting the write directly; if the parent path does not pre-exist on the Volume, the write will fail silently
    - Confirm WADO-RS is enabled on the PACS (some systems enable QIDO-RS but not WADO-RS)
