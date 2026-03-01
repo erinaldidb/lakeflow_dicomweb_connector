@@ -130,9 +130,7 @@ class TestOrthanc:
 
     def test_reads_instances_with_metadata(self, orthanc_connector):
         """fetch_metadata=true populates the metadata column as a JSON string."""
-        records_iter, _ = orthanc_connector.read_table(
-            "instances", {}, {"page_size": "5", "fetch_metadata": "true"}
-        )
+        records_iter, _ = orthanc_connector.read_table("instances", {}, {"page_size": "5", "fetch_metadata": "true"})
         records = list(records_iter)
         assert len(records) > 0
 
@@ -263,9 +261,7 @@ class TestEndToEndVariantPipeline:
         from databricks.labs.community_connector.libs.utils import parse_value
         from databricks.labs.community_connector.sources.dicomweb.dicomweb_schemas import INSTANCES_SCHEMA
 
-        records_iter, _ = orthanc_connector.read_table(
-            "instances", {}, {"page_size": "5", "fetch_metadata": "true"}
-        )
+        records_iter, _ = orthanc_connector.read_table("instances", {}, {"page_size": "5", "fetch_metadata": "true"})
         records = list(records_iter)
         assert len(records) > 0
 
@@ -296,9 +292,7 @@ class TestEndToEndVariantPipeline:
         column_expressions = orthanc_connector.read_table_metadata("instances", {})["column_expressions"]
 
         # Step 1: real instances from Orthanc with metadata populated
-        records_iter, _ = orthanc_connector.read_table(
-            "instances", {}, {"page_size": "5", "fetch_metadata": "true"}
-        )
+        records_iter, _ = orthanc_connector.read_table("instances", {}, {"page_size": "5", "fetch_metadata": "true"})
         records = list(records_iter)
         assert len(records) > 0
         assert any(r.get("metadata") is not None for r in records), (
@@ -488,9 +482,7 @@ class TestDeclarativePipeline:
         raw_df = raw_flow.func()
 
         meta_raw = next(f for f in raw_df.schema.fields if f.name == "metadata")
-        assert isinstance(meta_raw.dataType, StringType), (
-            "instances_raw view must have metadata as StringType"
-        )
+        assert isinstance(meta_raw.dataType, StringType), "instances_raw view must have metadata as StringType"
 
         # Register as a Spark temp view so the instances_fn can read it
         raw_df.createOrReplaceTempView("instances_raw")
@@ -557,8 +549,7 @@ class TestDeclarativePipeline:
 
         meta_field = next(f for f in result_df.schema.fields if f.name == "metadata")
         assert isinstance(meta_field.dataType, VariantType), (
-            f"@sdp.append_flow body must produce VariantType for metadata, "
-            f"got {meta_field.dataType}"
+            f"@sdp.append_flow body must produce VariantType for metadata, got {meta_field.dataType}"
         )
 
         collected = result_df.collect()
