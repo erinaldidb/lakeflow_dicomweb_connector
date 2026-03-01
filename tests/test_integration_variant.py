@@ -140,16 +140,16 @@ class TestOrthanc:
         records = list(records_iter)
         assert len(records) > 0
 
-        records_with_meta = [r for r in records if r.get("meta") is not None]
-        assert len(records_with_meta) > 0, "Expected at least one instance with meta populated"
+        records_with_meta = [r for r in records if r.get("metadata") is not None]
+        assert len(records_with_meta) > 0, "Expected at least one instance with metadata populated"
 
         for r in records_with_meta:
-            # Connector yields meta as a plain JSON string in the raw Python dict.
+            # Connector yields metadata as a plain JSON string in the raw Python dict.
             # parse_value() converts it to VariantVal when building the DataFrame.
-            assert isinstance(r["meta"], str), (
-                f"Connector must yield meta as str in raw dict, got {type(r['meta']).__name__}"
+            assert isinstance(r["metadata"], str), (
+                f"Connector must yield metadata as str in raw dict, got {type(r['metadata']).__name__}"
             )
-            parsed = json.loads(r["meta"])
+            parsed = json.loads(r["metadata"])
             assert isinstance(parsed, dict), "metadata must be a valid DICOM JSON object"
 
 
@@ -289,9 +289,9 @@ class TestEndToEndVariantPipeline:
         rows = [parse_value(r, INSTANCES_SCHEMA) for r in records]
         df = spark.createDataFrame(rows, INSTANCES_SCHEMA)
 
-        meta_field = next(f for f in df.schema.fields if f.name == "meta")
+        meta_field = next(f for f in df.schema.fields if f.name == "metadata")
         assert isinstance(meta_field.dataType, VariantType), (
-            f"After parse_value() with VariantType schema, meta must be VariantType already, "
+            f"After parse_value() with VariantType schema, metadata must be VariantType already, "
             f"got {meta_field.dataType}. parse_value() must call VariantVal.parseJson() for VariantType fields."
         )
 
@@ -300,7 +300,7 @@ class TestEndToEndVariantPipeline:
         Full chain test — no _apply_column_expressions required:
           1. Connector reads real instances with WADO-RS metadata (JSON strings in raw dict).
           2. parse_value() converts JSON string → VariantVal for each VariantType field.
-          3. DataFrame built with INSTANCES_SCHEMA has VariantType for meta directly.
+          3. DataFrame built with INSTANCES_SCHEMA has VariantType for metadata directly.
           4. .collect() runs — no Spark evaluation errors.
         """
         from pyspark.sql.types import VariantType
@@ -311,24 +311,24 @@ class TestEndToEndVariantPipeline:
         records_iter, _ = orthanc_connector.read_table("instances", {}, {"page_size": "5", "fetch_metadata": "true"})
         records = list(records_iter)
         assert len(records) > 0
-        assert any(r.get("meta") is not None for r in records), (
-            "At least one instance must have meta for a meaningful test"
+        assert any(r.get("metadata") is not None for r in records), (
+            "At least one instance must have metadata for a meaningful test"
         )
 
         # parse_value handles VariantType → VariantVal conversion; no selectExpr needed
         rows = [parse_value(r, INSTANCES_SCHEMA) for r in records]
         df = spark.createDataFrame(rows, INSTANCES_SCHEMA)
 
-        meta_field = next(f for f in df.schema.fields if f.name == "meta")
+        meta_field = next(f for f in df.schema.fields if f.name == "metadata")
         assert isinstance(meta_field.dataType, VariantType), (
-            f"meta must be VariantType directly after parse_value(), got {meta_field.dataType}"
+            f"metadata must be VariantType directly after parse_value(), got {meta_field.dataType}"
         )
 
         # data is collectable — no Spark evaluation errors
         collected = df.collect()
         assert len(collected) == len(records)
 
-        # Spot-check: non-meta columns are still readable
+        # Spot-check: non-metadata columns are still readable
         assert all(r["SOPInstanceUID"] is not None for r in collected)
 
 
@@ -487,9 +487,9 @@ class TestDeclarativePipeline:
         raw_flow = next(f for f in flows if f.name == "instances_raw")
         raw_df = raw_flow.func()
 
-        meta_raw = next(f for f in raw_df.schema.fields if f.name == "meta")
+        meta_raw = next(f for f in raw_df.schema.fields if f.name == "metadata")
         assert isinstance(meta_raw.dataType, VariantType), (
-            "instances_raw view must have meta as VariantType after parse_value()"
+            "instances_raw view must have metadata as VariantType after parse_value()"
         )
 
         # Register as a Spark temp view so the instances_fn can read it
@@ -500,9 +500,9 @@ class TestDeclarativePipeline:
         result_df = table_flow.func()
 
         # ---- Assertions -------------------------------------------------------
-        meta_final = next(f for f in result_df.schema.fields if f.name == "meta")
+        meta_final = next(f for f in result_df.schema.fields if f.name == "metadata")
         assert isinstance(meta_final.dataType, VariantType), (
-            f"@sdp.table('instances') must have VariantType for meta, got {meta_final.dataType}"
+            f"@sdp.table('instances') must have VariantType for metadata, got {meta_final.dataType}"
         )
 
         collected = result_df.collect()
@@ -553,9 +553,9 @@ class TestDeclarativePipeline:
         append_flow = next(f for f in flows if f.name == "instances_append")
         result_df = append_flow.func()
 
-        meta_field = next(f for f in result_df.schema.fields if f.name == "meta")
+        meta_field = next(f for f in result_df.schema.fields if f.name == "metadata")
         assert isinstance(meta_field.dataType, VariantType), (
-            f"@sdp.append_flow body must produce VariantType for meta via parse_value(), got {meta_field.dataType}"
+            f"@sdp.append_flow body must produce VariantType for metadata via parse_value(), got {meta_field.dataType}"
         )
 
         collected = result_df.collect()

@@ -73,10 +73,10 @@ INSTANCES_SCHEMA = StructType(
         StructField("ContentDate", StringType(), nullable=True),
         StructField("ContentTime", StringType(), nullable=True),
         # Populated when fetch_dicom_files=true; path inside Unity Catalog Volume
-        StructField("local_path", StringType(), nullable=True),
+        StructField("dicom_file_path", StringType(), nullable=True),
         # Full DICOM JSON for this instance; populated when fetch_metadata=true.
         # Stored as VariantType; parse_value() converts the JSON string → VariantVal.
-        StructField("meta", VariantType(), nullable=True),
+        StructField("metadata", VariantType(), nullable=True),
         # Lineage: UC connection name that produced this record
         StructField("connection_name", StringType(), nullable=True),
     ]

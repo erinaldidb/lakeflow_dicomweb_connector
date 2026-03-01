@@ -341,7 +341,7 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                         # Attach full DICOM JSON metadata
                         if fetch_metadata:
                             sop_uid = record.get("SOPInstanceUID")
-                            record["meta"] = sop_to_meta.get(sop_uid) if sop_uid else None
+                            record["metadata"] = sop_to_meta.get(sop_uid) if sop_uid else None
                         # Attach DICOM file or frame
                         if fetch_files:
                             record = self._attach_dicom_file(record, volume_path, wado_mode)
@@ -417,11 +417,11 @@ class DICOMwebLakeflowConnect(LakeflowConnect):
                 # the write_bytes() call below works regardless.
                 pass
             dest_path.write_bytes(file_bytes)
-            record["local_path"] = str(dest_path)
+            record["dicom_file_path"] = str(dest_path)
             logger.debug("Wrote %d bytes → %s", len(file_bytes), dest_path)
         except Exception as exc:
             logger.error("WADO-RS retrieval failed for %s: %s", sop_uid, exc)
-            record["local_path"] = None
+            record["dicom_file_path"] = None
 
         return record
 
